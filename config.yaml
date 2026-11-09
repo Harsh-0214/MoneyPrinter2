@@ -4,16 +4,15 @@
 
 data:
   path: data/EURUSD_M1.csv   # your historical data (see README for how to get it)
-  source_tz: UTC              # timezone of the timestamps in the file
-                              #   Dukascopy: UTC
-                              #   MT5 exports: broker SERVER time, often "Europe/Helsinki"
-                              #   (UTC+2 winter / UTC+3 summer). Check with your broker.
+  source_tz: "NY+7"           # FOREX.com server time = New York local + 7 h
+                              #   winter (EST): UTC+2   summer (EDT): UTC+3
+                              #   Use "UTC" for Dukascopy; a standard IANA tz for other brokers.
   timeframe: 5min             # bars the strategy runs on (resampled from the file)
   start: null                 # e.g. "2022-01-01"  (null = from beginning of file)
   end: null                   # e.g. "2023-12-31"  (null = to end of file)
 
 account:
-  starting_equity: 10000      # account currency = USD for now
+  starting_equity: 50000      # match the FOREX.com demo balance
 
 costs:
   spread_pips: 1.0            # minimum spread charged on every trade

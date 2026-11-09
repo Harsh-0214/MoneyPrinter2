@@ -94,7 +94,7 @@ def _replay_startup(broker, strategy, risk, cfg, pip):
     import MetaTrader5 as mt5
     import numpy as np
     import pandas as pd
-    from fxbot.data import resample
+    from fxbot.data import resample, server_ts_to_utc
 
     symbol = cfg["live"]["symbol"]
     now_utc = datetime.now(timezone.utc)
@@ -110,10 +110,9 @@ def _replay_startup(broker, strategy, risk, cfg, pip):
         log.info("Startup replay: no bars yet today")
         return
 
-    import pandas as pd
     df = pd.DataFrame(rates)
-    df["time"] = pd.to_datetime(df["time"], unit="s", utc=True)
-    df = df.set_index("time")
+    df.index = server_ts_to_utc(df["time"].values)
+    df = df.drop(columns=["time"])
     df = df.rename(columns={"tick_volume": "volume"})
     if "spread" in df.columns:
         df["data_spread_pips"] = df["spread"] / 10.0
@@ -201,6 +200,7 @@ def run(cfg, dry_run=False, allow_live=False):
             log.info("Bot started. equity=%.2f dry_run=%s", equity, dry_run)
 
             import MetaTrader5 as mt5
+            from fxbot.data import server_ts_to_utc as _sts_to_utc
 
             while True:
                 _next_bar_close()
@@ -212,8 +212,8 @@ def run(cfg, dry_run=False, allow_live=False):
                     continue
 
                 df = pd.DataFrame(rates)
-                df["time"] = pd.to_datetime(df["time"], unit="s", utc=True)
-                df = df.set_index("time")
+                df.index = _sts_to_utc(df["time"].values)
+                df = df.drop(columns=["time"])
                 if "spread" in df.columns:
                     df["data_spread_pips"] = df["spread"] / 10.0
 

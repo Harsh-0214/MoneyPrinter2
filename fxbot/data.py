@@ -11,6 +11,33 @@ PIP = 0.0001            # EUR/USD pip size
 POINTS_PER_PIP = 10     # MT5 quotes EUR/USD with 5 digits: 1 pip = 10 points
 
 
+def _apply_ny7(naive_ts: pd.DatetimeIndex) -> pd.DatetimeIndex:
+    """Convert FOREX.com server timestamps to UTC.
+
+    Server time = New York local time + 7 hours (winter: UTC+2, summer: UTC+3).
+    We subtract 7 h to recover naive NY local time, localize it as
+    America/New_York (which knows the exact US DST switch dates), then
+    convert to UTC.  Europe/Helsinki would be wrong in the ~2-week windows
+    where US and European DST switch dates differ.
+    """
+    shifted = naive_ts - pd.Timedelta(hours=7)
+    return shifted.tz_localize(
+        "America/New_York", ambiguous="NaT", nonexistent="NaT"
+    ).tz_convert("UTC")
+
+
+def server_ts_to_utc(epoch_seconds) -> pd.DatetimeIndex:
+    """Convert MT5 server-time epoch seconds to real UTC.
+
+    MT5's copy_rates_* encodes bar timestamps as if the server clock were UTC,
+    so a bar at server 10:00 (UTC+2 in winter) comes back as epoch 10:00 UTC.
+    This function undoes that by treating the values as server time and
+    applying the NY+7 offset.
+    """
+    naive = pd.DatetimeIndex(pd.to_datetime(epoch_seconds, unit="s"))
+    return _apply_ny7(naive)
+
+
 def load_csv(path, source_tz="UTC"):
     """Load bars from an MT5 export, Dukascopy CSV, or a generic OHLC CSV."""
     with open(path, "r", encoding="utf-8-sig") as f:
@@ -37,7 +64,10 @@ def load_csv(path, source_tz="UTC"):
 
     ts = pd.DatetimeIndex(ts)
     if ts.tz is None:
-        ts = ts.tz_localize(source_tz, ambiguous="NaT", nonexistent="NaT")
+        if source_tz == "NY+7":
+            ts = _apply_ny7(ts)
+        else:
+            ts = ts.tz_localize(source_tz, ambiguous="NaT", nonexistent="NaT")
     ts = ts.tz_convert("UTC")
 
     missing = [c for c in ("open", "high", "low", "close") if c not in df.columns]
