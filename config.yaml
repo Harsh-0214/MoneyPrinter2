@@ -3,7 +3,7 @@
 # ============================================================
 
 data:
-  path: data/EURUSD_M1.csv   # your historical data (see README for how to get it)
+  path: data/EURUSD_M5.csv   # 16 months of M5 bars from MT5 (Jul 2025 - Nov 2026)
   source_tz: "NY+7"           # FOREX.com server time = New York local + 7 h
                               #   winter (EST): UTC+2   summer (EDT): UTC+3
                               #   Use "UTC" for Dukascopy; a standard IANA tz for other brokers.

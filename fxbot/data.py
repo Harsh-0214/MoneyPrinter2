@@ -51,8 +51,10 @@ def load_csv(path, source_tz="UTC"):
     if "date" in df.columns and "time" in df.columns:          # MT5 "Export Bars"
         raw = df["date"].astype(str).str.replace(".", "-", regex=False) + " " + df["time"].astype(str)
         ts = pd.to_datetime(raw)
-    elif "gmt time" in df.columns:                            # Dukascopy
+    elif "gmt time" in df.columns:                            # Dukascopy old format
         ts = pd.to_datetime(df["gmt time"], format="%d.%m.%Y %H:%M:%S.%f")
+    elif "etc/utc" in df.columns:                             # Dukascopy new format (ISO 8601 UTC)
+        ts = pd.to_datetime(df["etc/utc"], utc=True)
     else:                                                     # generic / fetch_mt5_data.py
         col = next((c for c in ("time", "datetime", "timestamp", "date") if c in df.columns), None)
         if col is None:

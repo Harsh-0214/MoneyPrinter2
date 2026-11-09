@@ -39,14 +39,20 @@ def main():
     ap.add_argument("--start", required=True)
     ap.add_argument("--end", required=True)
     ap.add_argument("--out", default="data/EURUSD_M1.csv")
+    ap.add_argument("--timeframe", default="M1", choices=["M1", "M5", "M15", "H1"])
     ap.add_argument("--retries", type=int, default=3,
                     help="Times to retry a month that returns suspiciously few bars")
     args = ap.parse_args()
 
     log.info("Log file: %s", log_path)
-    log.info("Symbol: %s  range: %s -> %s  output: %s", args.symbol, args.start, args.end, args.out)
+    log.info("Symbol: %s  timeframe: %s  range: %s -> %s  output: %s",
+             args.symbol, args.timeframe, args.start, args.end, args.out)
 
     import MetaTrader5 as mt5
+    TF_MAP = {"M1": mt5.TIMEFRAME_M1, "M5": mt5.TIMEFRAME_M5,
+              "M15": mt5.TIMEFRAME_M15, "H1": mt5.TIMEFRAME_H1}
+    timeframe = TF_MAP[args.timeframe]
+
     if not mt5.initialize():
         raise SystemExit(f"Could not connect to MT5: {mt5.last_error()}. Is the terminal open and logged in?")
     if not mt5.symbol_select(args.symbol, True):
@@ -78,7 +84,7 @@ def main():
         for attempt in range(1, args.retries + 1):
             rates = mt5.copy_rates_range(
                 args.symbol,
-                mt5.TIMEFRAME_M1,
+                timeframe,
                 a.to_pydatetime().replace(tzinfo=timezone.utc),
                 b.to_pydatetime().replace(tzinfo=timezone.utc),
             )
