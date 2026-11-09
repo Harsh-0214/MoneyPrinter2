@@ -49,3 +49,9 @@ strategy:
 
 output:
   dir: results
+
+live:
+  symbol: "EURUSD"           # exact symbol name on your broker (may have suffix, e.g. EURUSD.a)
+  server_tz: "Europe/Helsinki"  # broker server timezone (MT5 uses this for bar timestamps)
+  magic: 12345               # unique number so the bot only manages its own positions
+  allow_live: false          # must be true AND --allow-live flag set to run on a real account
