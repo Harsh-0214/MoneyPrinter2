@@ -1,0 +1,8 @@
+pandas>=2.0
+numpy
+pyyaml
+tzdata          # needed on Windows for timezone handling
+matplotlib      # equity chart
+pytest          # tests
+python-dotenv   # load MT5 credentials from .env
+MetaTrader5     # only for fetch_mt5_data.py and run_live.py (Windows)

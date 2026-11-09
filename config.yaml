@@ -1,0 +1,51 @@
+# ============================================================
+#  fxbot configuration - every tunable number lives here
+# ============================================================
+
+data:
+  path: data/EURUSD_M1.csv   # your historical data (see README for how to get it)
+  source_tz: UTC              # timezone of the timestamps in the file
+                              #   Dukascopy: UTC
+                              #   MT5 exports: broker SERVER time, often "Europe/Helsinki"
+                              #   (UTC+2 winter / UTC+3 summer). Check with your broker.
+  timeframe: 5min             # bars the strategy runs on (resampled from the file)
+  start: null                 # e.g. "2022-01-01"  (null = from beginning of file)
+  end: null                   # e.g. "2023-12-31"  (null = to end of file)
+
+account:
+  starting_equity: 10000      # account currency = USD for now
+
+costs:
+  spread_pips: 1.0            # minimum spread charged on every trade
+  use_data_spread: true       # if the file has a spread column, use it when it's wider
+  rollover_spread_pips: 3.0   # spread around the 5pm New York rollover (it widens a lot)
+  slippage_pips: 0.2          # extra cost on market and stop fills
+  commission_per_lot_per_side: 0.0   # standard accounts: 0 (cost is in the spread)
+                                     # raw/ECN accounts: often ~3.5 USD
+
+risk:
+  risk_per_trade_pct: 0.5     # % of equity lost if the stop is hit
+  max_daily_loss_pct: 2.0     # kill switch: no new trades today after this loss
+  max_leverage: 10            # hard cap on position notional / equity
+  min_units: 1000             # size is rounded down to micro lots (1,000 units)
+  news_file: null             # optional CSV of high-impact news times (UTC), column "time"
+  news_blackout_minutes: 30   # no new entries this many minutes either side of news
+
+strategy:
+  # All times are LONDON local time (DST handled automatically)
+  range_start: "00:00"        # start building the Asian range
+  range_end: "08:00"          # London open: range is locked
+  entry_cutoff: "11:00"       # no new entries after this
+  session_exit: "16:00"       # flatten any open trade at this time
+  buffer_pips: 1.0            # price must close this far beyond the range
+  min_range_pips: 15          # skip days with a tiny range (noise)
+  max_range_pips: 60          # skip days with a huge range (stop too wide)
+  stop_mode: range            # range = stop at the other side of the range
+                              # atr   = stop at atr_stop_mult x ATR from entry
+  atr_period: 14
+  atr_stop_mult: 1.5
+  reward_risk: 1.5            # target = 1.5 x the stop distance
+  max_trades_per_day: 1
+
+output:
+  dir: results
