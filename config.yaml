@@ -31,20 +31,39 @@ risk:
   news_blackout_minutes: 30   # no new entries this many minutes either side of news
 
 strategy:
-  # All times are LONDON local time (DST handled automatically)
-  range_start: "00:00"        # start building the Asian range
-  range_end: "08:00"          # London open: range is locked
-  entry_cutoff: "11:00"       # no new entries after this
-  session_exit: "16:00"       # flatten any open trade at this time
-  buffer_pips: 1.0            # price must close this far beyond the range
-  min_range_pips: 15          # skip days with a tiny range (noise)
-  max_range_pips: 60          # skip days with a huge range (stop too wide)
-  stop_mode: range            # range = stop at the other side of the range
-                              # atr   = stop at atr_stop_mult x ATR from entry
+  name: london_sweep          # london_breakout | london_sweep | ny_breakout | prev_day_breakout | mean_reversion
+
+  # --- Shared times (London local, DST handled) ---
+  range_start: "00:00"
+  range_end: "08:00"
+  entry_cutoff: "11:00"
+  session_exit: "16:00"
+  max_trades_per_day: 1
+
+  # --- London Breakout params (used when name: london_breakout) ---
+  buffer_pips: 1.0
+  min_range_pips: 20
+  max_range_pips: 60
+  stop_mode: range
   atr_period: 14
   atr_stop_mult: 1.5
-  reward_risk: 1.5            # target = 1.5 x the stop distance
-  max_trades_per_day: 1
+  reward_risk: 1.0
+  ema_filter: false
+  ema_period: 50
+
+  # --- London Sweep params (used when name: london_sweep) ---
+  sweep_window_start: "08:00"
+  sweep_window_end: "10:30"
+  sweep_min_pips: 1.0
+  sweep_max_pips: 15.0
+  swing_k: 2
+  bos_buffer_pips: 0.5
+  max_bars_after_sweep: 12
+  require_close_inside_range: true
+  stop_buffer_pips: 1.0
+  max_stop_pips: 25
+  target_mode: opposite_range  # opposite_range | rr
+  min_rr: 1.5
 
 output:
   dir: results

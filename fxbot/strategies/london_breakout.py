@@ -34,6 +34,7 @@ class LondonBreakout:
         self.atr_mult = cfg.get("atr_stop_mult", 1.5)
         self.rr = cfg["reward_risk"]
         self.max_trades = cfg.get("max_trades_per_day", 1)
+        self.ema_filter = cfg.get("ema_filter", False)
         self.day = None
         self.skipped_days = 0
 
@@ -72,6 +73,14 @@ class LondonBreakout:
             return
 
         spread_px = bar.spread_pips * self.pip
+
+        # EMA trend filter: only trade in the direction the EMA says
+        if self.ema_filter and hasattr(bar, "ema") and bar.ema == bar.ema:
+            if bar.close > self.hi + self.buffer and bar.close < bar.ema:
+                return
+            if bar.close < self.lo - self.buffer and bar.close > bar.ema:
+                return
+
         if bar.close > self.hi + self.buffer:
             side, entry_est = 1, bar.close + spread_px          # buy at ask
             stop = self.lo if self.stop_mode == "range" else entry_est - self.atr_mult * bar.atr

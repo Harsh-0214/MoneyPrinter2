@@ -7,7 +7,16 @@ import pandas as pd
 from .brokers import SimBroker, compute_spread_pips
 from .data import PIP
 from .risk import RiskManager
-from .strategies import LondonBreakout
+from .strategies import (LondonBreakout, LondonSweep, MeanReversion,
+                          NYOpenBreakout, PrevDayBreakout)
+
+STRATEGY_MAP = {
+    "london_breakout":  LondonBreakout,
+    "london_sweep":     LondonSweep,
+    "ny_breakout":      NYOpenBreakout,
+    "prev_day_breakout": PrevDayBreakout,
+    "mean_reversion":   MeanReversion,
+}
 
 
 def add_atr(df, period):
@@ -18,11 +27,12 @@ def add_atr(df, period):
     return tr.rolling(period).mean()
 
 
-def run_backtest(df, cfg):
+def run_backtest(df, cfg, strategy_cls=None):
     s_cfg, c_cfg = cfg["strategy"], cfg["costs"]
     df = df.copy()
     df["spread_pips"] = compute_spread_pips(df, c_cfg)
     df["atr"] = add_atr(df, s_cfg.get("atr_period", 14))
+    df["ema"] = df["close"].ewm(span=s_cfg.get("ema_period", 50), adjust=False).mean()
 
     local = df.index.tz_convert("Europe/London").tz_localize(None)
     local_days = local.values.astype("datetime64[D]")
@@ -31,7 +41,9 @@ def run_backtest(df, cfg):
     broker = SimBroker(cfg["account"]["starting_equity"], c_cfg["slippage_pips"],
                        c_cfg["commission_per_lot_per_side"], PIP)
     risk = RiskManager(cfg["risk"], PIP)
-    strategy = LondonBreakout(s_cfg, PIP)
+    if strategy_cls is None:
+        strategy_cls = STRATEGY_MAP.get(s_cfg.get("name", "london_breakout"), LondonBreakout)
+    strategy = strategy_cls(s_cfg, PIP)
 
     equity = np.empty(len(df))
     prev_day = None

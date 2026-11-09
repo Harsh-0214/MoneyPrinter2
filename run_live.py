@@ -168,14 +168,18 @@ def _session_summary(broker, start_equity, log):
 
 
 def run(cfg, dry_run=False, allow_live=False):
+    from fxbot.backtest import STRATEGY_MAP
     from fxbot.brokers.mt5_broker import MT5Broker
     from fxbot.data import PIP, resample
     from fxbot.risk import RiskManager
-    from fxbot.strategies.london_breakout import LondonBreakout
     import pandas as pd
 
     pip = PIP
-    strategy = LondonBreakout(cfg["strategy"], pip)
+    s_name = cfg["strategy"].get("name", "london_breakout")
+    strategy_cls = STRATEGY_MAP.get(s_name)
+    if strategy_cls is None:
+        raise ValueError(f"Unknown strategy '{s_name}'. Options: {list(STRATEGY_MAP)}")
+    strategy = strategy_cls(cfg["strategy"], pip)
     risk = RiskManager(cfg["risk"], pip)
 
     consecutive_failures = 0
