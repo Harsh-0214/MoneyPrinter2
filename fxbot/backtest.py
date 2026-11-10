@@ -32,7 +32,12 @@ def run_backtest(df, cfg, strategy_cls=None):
     df = df.copy()
     df["spread_pips"] = compute_spread_pips(df, c_cfg)
     df["atr"] = add_atr(df, s_cfg.get("atr_period", 14))
+    # Intrabar EMA (used by LondonBreakout's ema_filter)
     df["ema"] = df["close"].ewm(span=s_cfg.get("ema_period", 50), adjust=False).mean()
+    # Daily-close EMA: shift(1) so each bar only sees *previous* day's close — no lookahead
+    daily_close = df["close"].resample("1D").last().shift(1)
+    daily_ema_raw = daily_close.ewm(span=s_cfg.get("daily_ema_period", 10), adjust=False).mean()
+    df["daily_ema"] = daily_ema_raw.reindex(df.index, method="ffill")
 
     local = df.index.tz_convert("Europe/London").tz_localize(None)
     local_days = local.values.astype("datetime64[D]")

@@ -46,6 +46,11 @@ class LondonSweep:
         self.rr           = cfg.get("reward_risk",               2.0)
         self.min_rr       = cfg.get("min_rr",                    1.5)
         self.max_trades   = cfg.get("max_trades_per_day",          1)
+        self.ema_filter   = cfg.get("ema_filter",               False)
+        # daily_ema is the EMA of daily closes (computed in backtest.py via resample+shift)
+        # skip_days: set of weekday ints to skip (0=Mon … 4=Fri); empty = trade every day
+        raw_skip = cfg.get("skip_days", [])
+        self._skip_days   = set(int(d) for d in raw_skip)
 
         self.day = None
         self._reset_day(None)
@@ -142,6 +147,11 @@ class LondonSweep:
     def on_bar(self, bar, local_day, local_min, broker, risk):
         if local_day != self.day:
             self._reset_day(local_day)
+            # Skip entire day if it falls in skip_days (0=Mon … 4=Fri)
+            if self._skip_days:
+                dow = int(local_day.astype("datetime64[D]").astype(object).weekday())
+                if dow in self._skip_days:
+                    self.trades_today = self.max_trades  # block entry for the day
 
         # --- append bar and confirm any new swing point ---
         self._bars.append(bar)
@@ -195,8 +205,14 @@ class LondonSweep:
         if local_min < self.range_end:
             return
 
+        # Daily trend filter: use yesterday's daily-close EMA, not intrabar EMA.
+        # daily_ema column is populated by backtest.py (resample to 1D, shift(1), ffill).
+        daily_ema = getattr(bar, "daily_ema", float("nan"))
+        ema_ok_short = (not self.ema_filter) or (daily_ema == daily_ema and bar.close < daily_ema)
+        ema_ok_long  = (not self.ema_filter) or (daily_ema == daily_ema and bar.close > daily_ema)
+
         # Short setup (high was swept)
-        if self.high_swept and not self.high_failed and self.ext_hi_idx is not None:
+        if ema_ok_short and self.high_swept and not self.high_failed and self.ext_hi_idx is not None:
             if bar_idx - self.ext_hi_idx <= self.max_bars_bos:
                 sw = self._last_sw_low_before(self.ext_hi_idx)
                 if sw is not None:
@@ -209,7 +225,7 @@ class LondonSweep:
                             return
 
         # Long setup (low was swept)
-        if self.low_swept and not self.low_failed and self.ext_lo_idx is not None:
+        if ema_ok_long and self.low_swept and not self.low_failed and self.ext_lo_idx is not None:
             if bar_idx - self.ext_lo_idx <= self.max_bars_bos:
                 sw = self._last_sw_high_before(self.ext_lo_idx)
                 if sw is not None:
