@@ -3,10 +3,9 @@
 # ============================================================
 
 data:
-  path: data/EURUSD_M5.csv   # 16 months of M5 bars from MT5 (Jul 2025 - Nov 2026)
-  source_tz: "NY+7"           # FOREX.com server time = New York local + 7 h
-                              #   winter (EST): UTC+2   summer (EDT): UTC+3
-                              #   Use "UTC" for Dukascopy; a standard IANA tz for other brokers.
+  path: data/EURUSD_M1_histdata.csv   # 4 years of M1 bars from histdata.com (2022-2025)
+  source_tz: "UTC"            # histdata MetaTrader export is UTC (converted in combine_histdata.py)
+                              #   Switch back to data/EURUSD_M5.csv + source_tz: NY+7 for live replay
   timeframe: 5min             # bars the strategy runs on (resampled from the file)
   start: null                 # e.g. "2022-01-01"  (null = from beginning of file)
   end: null                   # e.g. "2023-12-31"  (null = to end of file)
