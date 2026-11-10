@@ -11,9 +11,10 @@ from .data import PIP, filter_dates, load_csv, resample
 from .risk import RiskManager
 from .strategies import (LondonBreakout, LondonCloseReversal, LondonSweep,
                           MeanReversion, NYOpenBreakout, PrevDayBreakout,
-                          TinyRangeFade, TrendFollow)
+                          TinyRangeFade, TrendFollow, KeyLevels)
 
 STRATEGY_MAP = {
+    "key_levels":       KeyLevels,
     "trend_follow":     TrendFollow,
     "tiny_range_fade":  TinyRangeFade,
     "london_close_reversal": LondonCloseReversal,

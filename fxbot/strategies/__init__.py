@@ -7,3 +7,4 @@ from .proposal import TradeProposal
 from .tiny_range_fade import TinyRangeFade
 from .london_close_reversal import LondonCloseReversal
 from .trend_follow import TrendFollow
+from .key_levels import KeyLevels

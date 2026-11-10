@@ -188,6 +188,16 @@ def _fetch_completed_bars(mt5, symbol, smt_symbol, cfg, start_utc):
     return bars
 
 
+def _overlay_path(mt5, symbol):
+    """<MT5 common data>/Files/fxbot_<symbol>.txt, read by the FxbotOverlay indicator."""
+    info = mt5.terminal_info()
+    if info is None or not getattr(info, "commondata_path", None):
+        return None
+    d = Path(info.commondata_path) / "Files"
+    d.mkdir(parents=True, exist_ok=True)
+    return str(d / f"fxbot_{symbol}.txt")
+
+
 def _build_morning(cfg):
     from fxbot.backtest import STRATEGY_MAP
     from fxbot.data import PIP
@@ -265,6 +275,19 @@ def run(cfg, pair="EURUSD", dry_run=False, allow_live=False):
                      0 if bars is None else len(bars), last_ts,
                      fired_day is not None, broker.position() is not None)
             log.info("Bot started. equity=%.2f dry_run=%s", broker.equity(), dry_run)
+            overlay_path = _overlay_path(mt5, symbol)
+
+            def _draw():
+                if overlay_path is None:
+                    return
+                try:
+                    from fxbot.overlay import build_lines, write_overlay
+                    lmin = _london_local(datetime.now(timezone.utc))[1]
+                    write_overlay(overlay_path, build_lines(morning, lmin, broker, symbol))
+                except Exception as e:          # drawing must never stop trading
+                    log.warning("overlay write failed: %s", e)
+
+            _draw()
             consecutive_failures = 0
 
             while True:
@@ -292,6 +315,7 @@ def run(cfg, pair="EURUSD", dry_run=False, allow_live=False):
                              bar.Index.astimezone(LONDON).strftime("%H:%M"), bar.spread_pips,
                              "open" if broker.position() is not None else "none",
                              broker.equity())
+                _draw()
 
         except KeyboardInterrupt:
             log.info("Bot stopped cleanly.")

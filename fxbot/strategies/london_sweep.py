@@ -5,8 +5,8 @@ Setup overview
 1. Build Asian range 00:00-08:00 London.
 2. During the sweep window (08:00-10:30) price "sweeps" just past the
    Asian high or low, running stop-losses.
-3. We wait for a confirmed Break-of-Structure (BOS) — a bar close back
-   through a swing low/high that formed BEFORE the sweep extreme — then
+3. We wait for a confirmed Break-of-Structure (BOS) â€” a bar close back
+   through a swing low/high that formed BEFORE the sweep extreme â€” then
    trade the reversal.
 
 Lookahead rule
@@ -35,6 +35,11 @@ from .proposal import TradeProposal, manages
 def _minutes(hhmm):
     t = time.fromisoformat(hhmm)
     return t.hour * 60 + t.minute
+
+
+def _range_len(start_min, end_min):
+    import pandas as pd
+    return pd.Timedelta(minutes=end_min - start_min)
 
 
 class LondonSweep:
@@ -91,6 +96,7 @@ class LondonSweep:
         self.ext_lo      = float("inf")
         self.ext_lo_idx  = None
         self.trades_today = 0
+        self.skip_today = None
         self.smt_asian_hi = float("-inf")
         self.smt_asian_lo = float("inf")
         self.smt_hi_swept = False
@@ -142,7 +148,7 @@ class LondonSweep:
         return result
 
     # ------------------------------------------------------------------ #
-    #  State update (pure — no broker side-effects)                       #
+    #  State update (pure â€” no broker side-effects)                       #
     # ------------------------------------------------------------------ #
 
     def _update_state(self, bar, local_day, local_min):
@@ -152,6 +158,7 @@ class LondonSweep:
                 dow = int(local_day.astype("datetime64[D]").astype(object).weekday())
                 if dow in self._skip_days:
                     self.trades_today = self.max_trades
+                    self.skip_today = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"][dow]
 
         self._bars.append(bar)
         bar_idx = len(self._bars) - 1
@@ -209,7 +216,7 @@ class LondonSweep:
         """Score this sweep setup.  Always >= 100; always beats Breakout (60-80)."""
         score = 100.0
 
-        # SMT divergence: EUR swept its range but GBP did NOT → genuine stop hunt
+        # SMT divergence: EUR swept its range but GBP did NOT â†’ genuine stop hunt
         if self.smt_filter:
             smt_data_ok = self.smt_asian_hi != float("-inf")
             if smt_data_ok:
@@ -218,7 +225,7 @@ class LondonSweep:
                 elif side == 1 and not self.smt_lo_swept:
                     score += 20
 
-        # Tight Asian range → more precise key levels
+        # Tight Asian range â†’ more precise key levels
         range_pips = (self.asian_hi - self.asian_lo) / self.pip
         if range_pips < 15:
             score += 10
@@ -276,7 +283,7 @@ class LondonSweep:
         return Order(1, units, stop, target, "sweep_long")
 
     # ------------------------------------------------------------------ #
-    #  Proposal (multi-strategy mode — no broker.submit)                  #
+    #  Proposal (multi-strategy mode â€” no broker.submit)                  #
     # ------------------------------------------------------------------ #
 
     def propose(self, bar, local_day, local_min, broker, risk) -> Optional[TradeProposal]:
@@ -357,6 +364,70 @@ class LondonSweep:
     def mark_fired(self):
         """Called by the multi-strategy engine after submitting this proposal."""
         self.trades_today += 1
+
+    # ------------------------------------------------------------------ #
+    #  Chart overlay: what the strategy currently "sees"                  #
+    # ------------------------------------------------------------------ #
+
+    def describe(self, local_min=None):
+        out = {"lines": [], "boxes": [], "status": ""}
+        if self.asian_hi == float("-inf"):
+            out["status"] = "Sweep: waiting for Asian range data"
+            return out
+        hi, lo, p = self.asian_hi, self.asian_lo, self.pip
+        rng = (hi - lo) / p
+        if self._bars:
+            t0 = self._bars[0].Index
+            out["boxes"].append({"t1": t0, "t2": t0 + _range_len(self.range_start, self.range_end),
+                                 "p1": hi, "p2": lo, "label": f"Asian range {rng:.0f}p",
+                                 "color": "steelblue"})
+        out["lines"] += [
+            {"price": hi, "label": "Asian high", "color": "dodgerblue"},
+            {"price": lo, "label": "Asian low", "color": "dodgerblue"},
+            {"price": hi + self.sweep_max, "label": "sweep limit", "color": "dimgray", "style": "dot"},
+            {"price": lo - self.sweep_max, "label": "sweep limit", "color": "dimgray", "style": "dot"},
+        ]
+        msgs = []
+        if self.skip_today:
+            out["status"] = f"Sweep: skip day ({self.skip_today}s are skipped by config) - watching only"
+            return out
+        if self.trades_today >= self.max_trades:
+            msgs.append("traded today - done")
+        elif local_min is not None and local_min < self.range_end:
+            msgs.append("building Asian range")
+        for side, swept, failed, ext, idx in ((-1, self.high_swept, self.high_failed, self.ext_hi, self.ext_hi_idx),
+                                              (1, self.low_swept, self.low_failed, self.ext_lo, self.ext_lo_idx)):
+            name = "high" if side == -1 else "low"
+            if failed:
+                msgs.append(f"{name} ran > {self.sweep_max/p:.0f}p (real move, no trade)")
+                continue
+            if not swept or idx is None:
+                continue
+            out["lines"].append({"price": ext, "label": f"sweep {name}", "color": "orangered"})
+            sw = self._last_sw_low_before(idx) if side == -1 else self._last_sw_high_before(idx)
+            smt_block = self.smt_filter and self.smt_asian_hi != float("-inf") and \
+                (self.smt_hi_swept if side == -1 else self.smt_lo_swept)
+            left = self.max_bars_bos - (len(self._bars) - 1 - idx)
+            if sw is None:
+                msgs.append(f"{name} swept, no swing point to break yet")
+            else:
+                lvl = sw[1] - self.bos_buf if side == -1 else sw[1] + self.bos_buf
+                out["lines"].append({"price": lvl, "color": "gold", "style": "dash",
+                                     "label": "BOS: sell below" if side == -1 else "BOS: buy above"})
+                if smt_block:
+                    msgs.append(f"{name} swept but GBP also swept (SMT) -> no trade")
+                elif left < 0:
+                    msgs.append(f"{name} swept, BOS window expired")
+                else:
+                    msgs.append(f"{name} swept -> waiting for close {'below' if side == -1 else 'above'} "
+                                f"{lvl:.5f} ({left} bars left)")
+        if not msgs and local_min is not None:
+            if self.sweep_start <= local_min < self.sweep_end:
+                msgs.append("watching for a sweep of the Asian high/low")
+            elif local_min >= self.entry_cutoff:
+                msgs.append("entry window closed")
+        out["status"] = "Sweep: " + ("; ".join(msgs) or "idle")
+        return out
 
     # ------------------------------------------------------------------ #
     #  Single-strategy / test interface (backward-compatible)             #

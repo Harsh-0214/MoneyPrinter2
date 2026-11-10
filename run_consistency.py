@@ -42,6 +42,13 @@ GRIDS = {
         "exit_days": [None, 10, 20],
         "stop_atr": [2.0, 3.0, 4.0],
     },
+    "key_levels": {
+        "mode": ["bounce", "break"],
+        "levels": ["pd+pw", "swing", "pd+pw+swing"],
+        "min_touches": [2, 3],
+        "target": ["rr", "next"],
+        "entry_end": ["12:00", "15:00"],
+    },
     "trend_turtle": {
         "entry_days": [20, 40, 55, 100],
         "exit_days": [10, 20, 40],
@@ -54,7 +61,7 @@ GRIDS = {
     },
 }
 SLOT = {"tiny_range_fade": "morning", "london_close_reversal": "afternoon",
-        "london_close_follow": "afternoon", "trend_donchian": "morning", "trend_ema": "morning", "trend_turtle": "morning"}
+        "london_close_follow": "afternoon", "trend_donchian": "morning", "trend_ema": "morning", "trend_turtle": "morning", "key_levels": "afternoon"}
 TIMEFRAME = {"trend_donchian": "1h", "trend_ema": "1h", "trend_turtle": "1h"}   # default: the cached 5min bars
 # grid name -> (strategy name, fixed params)
 ALIAS = {"london_close_follow": ("london_close_reversal", {"direction": "follow"}),

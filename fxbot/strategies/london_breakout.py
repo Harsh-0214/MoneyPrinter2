@@ -7,19 +7,19 @@
 3. Stop: other side of the range (or ATR-based). Target: reward_risk x stop.
 4. Any open trade is closed at session_exit.
 
-propose() — deferred execution for multi-strategy mode
+propose() â€” deferred execution for multi-strategy mode
 -------------------------------------------------------
 When used alongside a higher-priority strategy (e.g. LondonSweep), propose()
 does NOT fire during the sweep window (08:00-10:30).  Instead it:
   1. Tracks whether a breakout occurred during 08:00-10:30 (without submitting)
   2. At defer_until (default 10:30) it checks: is the breakout still valid?
-     If yes → returns a scored TradeProposal.
-     If price reversed back inside the range → proposal is None (false breakout filtered).
+     If yes â†’ returns a scored TradeProposal.
+     If price reversed back inside the range â†’ proposal is None (false breakout filtered).
 
 This gives the Sweep a full 2.5-hour window to form.  Only if no Sweep fires
 by 10:30 will the Breakout's proposal be executed.
 
-on_bar() — immediate, single-strategy / test mode (unchanged behaviour)
+on_bar() â€” immediate, single-strategy / test mode (unchanged behaviour)
 ------------------------------------------------------------------------
 Fires as soon as bar.close crosses the range, exactly as before.  Tests
 continue to use on_bar() and are unaffected.
@@ -31,7 +31,7 @@ Score = 60 base
   +  7  range 20-25 pips
   +  3  range 25-30 pips
   +  min(breakout_distance_pips, 5)  (momentum confirmation)
-Maximum: ~77 — always below LondonSweep minimum (100).
+Maximum: ~77 â€” always below LondonSweep minimum (100).
 """
 from datetime import time
 from typing import Optional
@@ -78,12 +78,13 @@ class LondonBreakout:
         self.hi   = float("-inf")
         self.lo   = float("inf")
         self.trades_today        = 0
+        self.skip_today          = None
         # Deferred tracking: direction of the first valid breakout signal seen
         # during the pre-defer window.  0 = no breakout yet.
         self._deferred_side = 0
 
     # ------------------------------------------------------------------ #
-    #  State update (pure — no broker side-effects)                       #
+    #  State update (pure â€” no broker side-effects)                       #
     # ------------------------------------------------------------------ #
 
     def _update_state(self, bar, local_day, local_min):
@@ -93,6 +94,7 @@ class LondonBreakout:
                 dow = int(local_day.astype("datetime64[D]").astype(object).weekday())
                 if dow in self._skip_days:
                     self.trades_today = self.max_trades
+                    self.skip_today = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"][dow]
 
         if self.range_start <= local_min < self.range_end:
             self.hi = max(self.hi, bar.high)
@@ -114,7 +116,7 @@ class LondonBreakout:
         """Score this breakout setup.  Always < 100 (below LondonSweep minimum)."""
         score = 60.0
 
-        # Range tightness: strong consolidation → more reliable breakout
+        # Range tightness: strong consolidation â†’ more reliable breakout
         range_pips = (self.hi - self.lo) / self.pip
         if range_pips < 20:
             score += 12
@@ -196,7 +198,7 @@ class LondonBreakout:
         return Order(-1, units, stop, target, "short_break")
 
     # ------------------------------------------------------------------ #
-    #  Proposal (multi-strategy mode — deferred, no broker.submit)        #
+    #  Proposal (multi-strategy mode â€” deferred, no broker.submit)        #
     # ------------------------------------------------------------------ #
 
     def propose(self, bar, local_day, local_min, broker, risk) -> Optional[TradeProposal]:
@@ -260,6 +262,36 @@ class LondonBreakout:
     def mark_fired(self):
         """Called by the multi-strategy engine after submitting this proposal."""
         self.trades_today += 1
+
+    def describe(self, local_min=None):
+        """Chart overlay: breakout trigger lines + what it's waiting for."""
+        out = {"lines": [], "boxes": [], "status": ""}
+        if self.hi == float("-inf"):
+            out["status"] = "Breakout: waiting for Asian range data"
+            return out
+        width = (self.hi - self.lo) / self.pip
+        out["lines"] += [
+            {"price": self.hi + self.buffer, "label": "breakout: buy zone", "color": "seagreen", "style": "dash"},
+            {"price": self.lo - self.buffer, "label": "breakout: sell zone", "color": "seagreen", "style": "dash"},
+        ]
+        if self.skip_today:
+            msg = f"skip day ({self.skip_today}s are skipped by config) - watching only"
+        elif self.trades_today >= self.max_trades:
+            msg = "traded today - done"
+        elif not (self.min_range <= width <= self.max_range):
+            msg = f"range {width:.0f}p outside {self.min_range}-{self.max_range}p -> no breakout today"
+        elif local_min is not None and local_min < self.range_end:
+            msg = f"range so far {width:.0f}p"
+        elif self._deferred_side == 0:
+            msg = f"range {width:.0f}p ok, no close outside it yet"
+        else:
+            d = "UP" if self._deferred_side == 1 else "DOWN"
+            msg = f"broke {d}; at 10:30 will {'buy' if self._deferred_side == 1 else 'sell'} " \
+                  f"if price is still outside (Sweep has priority)"
+            if local_min is not None and local_min >= self.entry_cutoff:
+                msg = "entry window closed"
+        out["status"] = "Breakout: " + msg
+        return out
 
     # ------------------------------------------------------------------ #
     #  Single-strategy / test interface (backward-compatible)             #

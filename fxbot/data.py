@@ -38,6 +38,16 @@ def server_ts_to_utc(epoch_seconds) -> pd.DatetimeIndex:
     return _apply_ny7(naive)
 
 
+def utc_to_server_epoch(ts_utc) -> int:
+    """Inverse of server_ts_to_utc: real UTC -> MT5 server-time epoch seconds
+    (what MT5 chart objects use as their time coordinate)."""
+    ts = pd.Timestamp(ts_utc)
+    if ts.tz is None:
+        ts = ts.tz_localize("UTC")
+    naive_server = ts.tz_convert("America/New_York").tz_localize(None) + pd.Timedelta(hours=7)
+    return int((naive_server - pd.Timestamp("1970-01-01")) // pd.Timedelta(seconds=1))
+
+
 def load_csv(path, source_tz="UTC"):
     """Load bars from an MT5 export, Dukascopy CSV, or a generic OHLC CSV."""
     with open(path, "r", encoding="utf-8-sig") as f:
