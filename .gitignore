@@ -13,3 +13,4 @@ data/cache/
 *.pyc
 *.pyo
 .DS_Store
+mt5/compile.log
