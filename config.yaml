@@ -69,8 +69,9 @@ strategies:
       ema_filter: false
       daily_ema_period: 10
       skip_days: [0, 1]          # skip Mon+Tue — both are losing days historically
-      smt_filter: false          # SMT raises win% (64%) but cuts trade count too far (14 trades)
+      smt_filter: true           # GBPUSD now a live pair → SMT divergence re-enabled as hard filter
       smt_min_pips: 1.0
+      trail_to_breakeven_rr: 1.0 # move stop to entry when price is 1R ahead (breakeven protection)
 
     - name: london_breakout      # fallback: fires only after sweep window closes (10:30)
       range_start: "00:00"
@@ -88,6 +89,7 @@ strategies:
       ema_filter: false
       skip_days: [0, 1]
       defer_until: "10:30"       # wait for sweep window to close before proposing
+      max_defer_extension_pips: 15  # skip if price ran >15 pips beyond range by 10:30
 
   afternoon: []                  # NY Open tested and dropped — loses on all configs
 
@@ -127,13 +129,36 @@ strategy:
   ema_period: 50
 
 # --- SMT divergence pair (GBPUSD for EURUSD strategy) ---
-# To enable: 1) download GBPUSD M1 from histdata.com into data/histdata_gbpusd/
-#            2) run: python combine_histdata.py --symbol GBPUSD
-#            3) set strategy.smt_filter: true
+# Used both as the SMT confirmation feed AND as a second trading pair.
 smt:
   path: data/GBPUSD_M1_histdata.csv
   source_tz: "UTC"
   timeframe: 5min
+
+# --- Multi-pair backtest (run_backtest_multi_pair in backtest.py) ---
+# Each pair runs the same strategies block with its own data and SMT feed.
+# If a data file is missing the pair is skipped with a warning.
+# To add more pairs: append a block with symbol, data, and optional smt.
+pairs:
+  - symbol: EURUSD
+    data:
+      path: data/EURUSD_M1_histdata.csv
+      source_tz: "UTC"
+      timeframe: 5min
+    smt:
+      path: data/GBPUSD_M1_histdata.csv
+      source_tz: "UTC"
+      timeframe: 5min
+
+  - symbol: GBPUSD
+    data:
+      path: data/GBPUSD_M1_histdata.csv
+      source_tz: "UTC"
+      timeframe: 5min
+    smt:
+      path: data/EURUSD_M1_histdata.csv
+      source_tz: "UTC"
+      timeframe: 5min
 
 output:
   dir: results

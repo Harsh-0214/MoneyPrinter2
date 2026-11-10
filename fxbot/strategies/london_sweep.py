@@ -64,6 +64,9 @@ class LondonSweep:
         self._skip_days   = set(int(d) for d in raw_skip)
         self.smt_filter   = cfg.get("smt_filter",              False)
         self.smt_min      = cfg.get("smt_min_pips",             1.0) * pip
+        # Trailing stop: move stop to breakeven when price moves this many R in our favour.
+        # 0 = disabled.
+        self.trail_be_rr  = float(cfg.get("trail_to_breakeven_rr", 0.0))
 
         self.day = None
         self._reset_day(None)
@@ -287,6 +290,15 @@ class LondonSweep:
 
         # Session exit is handled here even in propose() so positions close on time
         if broker.position() is not None:
+            # Trailing stop: move stop to breakeven once price is 1R ahead
+            if self.trail_be_rr > 0:
+                pos = broker.position()
+                profit_in_r = (bar.close - pos.entry_price) * pos.side / pos.risk_per_unit
+                if profit_in_r >= self.trail_be_rr:
+                    new_stop = pos.entry_price
+                    if (pos.side == 1 and new_stop > pos.stop_loss) or \
+                       (pos.side == -1 and new_stop < pos.stop_loss):
+                        broker.update_stop(new_stop)
             if local_min >= self.session_exit:
                 broker.close_position("session_exit")
             return None

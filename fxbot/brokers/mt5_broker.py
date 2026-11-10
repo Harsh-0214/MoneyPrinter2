@@ -199,6 +199,33 @@ class MT5Broker(Broker):
                 "Position closed: ticket=%d fill_price=%.5f", result.order, result.price
             )
 
+    def update_stop(self, new_stop_price: float) -> None:
+        pos = self.position()
+        if pos is None:
+            return
+        positions = mt5.positions_get(symbol=self._symbol)
+        ticket = None
+        for p in (positions or []):
+            if p.magic == self._magic:
+                ticket = p.ticket
+                break
+        if ticket is None:
+            return
+        request = {
+            "action": mt5.TRADE_ACTION_SLTP,
+            "symbol": self._symbol,
+            "sl": new_stop_price,
+            "tp": pos.take_profit or 0.0,
+            "position": ticket,
+        }
+        result = mt5.order_send(request)
+        if result.retcode != mt5.TRADE_RETCODE_DONE:
+            self._logger.error(
+                "update_stop failed: retcode=%d '%s'", result.retcode, result.comment
+            )
+        else:
+            self._logger.info("Stop moved to %.5f", new_stop_price)
+
     def current_spread_pips(self) -> float:
         tick = mt5.symbol_info_tick(self._symbol)
         return (tick.ask - tick.bid) / PIP

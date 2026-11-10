@@ -1,11 +1,13 @@
 """Backtest runner and performance metrics."""
+import copy
+import os
 from dataclasses import asdict
 
 import numpy as np
 import pandas as pd
 
 from .brokers import SimBroker, compute_spread_pips
-from .data import PIP, load_csv, resample
+from .data import PIP, filter_dates, load_csv, resample
 from .risk import RiskManager
 from .strategies import (LondonBreakout, LondonSweep, MeanReversion,
                           NYOpenBreakout, PrevDayBreakout)
@@ -231,3 +233,78 @@ def print_metrics(m):
     for k, v in rows:
         print(f"  {k:<20}{v}")
     print("=" * 46)
+
+
+def run_backtest_multi_pair(cfg):
+    """Run one independent backtest per pair in cfg['pairs'], then combine PnL.
+
+    Each pair runs the same strategies section with its own data and SMT pair.
+    Pairs with missing data files are skipped with a warning.
+    Falls back to run_backtest() when no 'pairs' key is present.
+
+    Returns (combined_trades_df, combined_equity_series).
+    """
+    pairs = cfg.get("pairs", [])
+    if not pairs:
+        d = cfg["data"]
+        raw = load_csv(d["path"], d["source_tz"])
+        bars = resample(raw, d["timeframe"])
+        if d.get("start") or d.get("end"):
+            bars = filter_dates(bars, d.get("start"), d.get("end"))
+        return run_backtest(bars, cfg)
+
+    d_ref = cfg.get("data", {})
+    start = d_ref.get("start")
+    end = d_ref.get("end")
+    starting_equity = cfg["account"]["starting_equity"]
+
+    all_trades = []
+    combined_pnl = None
+
+    for pair in pairs:
+        symbol = pair.get("symbol", "UNKNOWN")
+        data_cfg = pair["data"]
+        if not os.path.exists(data_cfg["path"]):
+            print(f"[multi-pair] {data_cfg['path']} not found — skipping {symbol}")
+            continue
+
+        pair_cfg = copy.deepcopy(cfg)
+        pair_cfg["data"] = dict(data_cfg)
+        if start:
+            pair_cfg["data"]["start"] = start
+        if end:
+            pair_cfg["data"]["end"] = end
+        pair_cfg["smt"] = pair.get("smt", {})
+
+        raw = load_csv(pair_cfg["data"]["path"], pair_cfg["data"]["source_tz"])
+        bars = resample(raw, pair_cfg["data"]["timeframe"])
+        if start or end:
+            bars = filter_dates(bars, start, end)
+
+        print(f"[multi-pair] Running {symbol} ({len(bars):,} bars) ...")
+        t, eq = run_backtest(bars, pair_cfg)
+
+        if len(t):
+            t = t.copy()
+            t.insert(0, "symbol", symbol)
+        all_trades.append(t)
+
+        pnl = eq - starting_equity
+        if combined_pnl is None:
+            combined_pnl = pnl
+        else:
+            combined_pnl = combined_pnl.add(
+                pnl.reindex(combined_pnl.index, method="ffill").fillna(0),
+                fill_value=0,
+            )
+
+    if not all_trades or all(len(t) == 0 for t in all_trades):
+        return pd.DataFrame(), pd.Series(dtype=float, name="equity")
+
+    combined_equity = combined_pnl + starting_equity
+    non_empty = [t for t in all_trades if len(t) > 0]
+    combined_trades = pd.concat(non_empty, ignore_index=True) if non_empty else pd.DataFrame()
+    if len(combined_trades):
+        combined_trades = combined_trades.sort_values("entry_time").reset_index(drop=True)
+
+    return combined_trades, combined_equity

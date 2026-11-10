@@ -64,6 +64,10 @@ class LondonBreakout:
         self.ema_filter   = cfg.get("ema_filter", False)
         raw_skip = cfg.get("skip_days", [])
         self._skip_days   = set(int(d) for d in raw_skip)
+        # Max extension beyond range buffer at defer_until: skip overextended entries.
+        # None = disabled (accept any extension).
+        _ext = cfg.get("max_defer_extension_pips", None)
+        self.max_defer_ext = _ext * pip if _ext is not None else None
         self.day          = None
         self._reset_day(None)
 
@@ -209,11 +213,17 @@ class LondonBreakout:
         # A breakout must have been seen during the pre-defer window AND
         # price must still be on the right side at defer_until (false-breakout filter)
         if self._deferred_side == 1 and bar.close > self.hi + self.buffer:
+            if self.max_defer_ext is not None:
+                if bar.close - (self.hi + self.buffer) > self.max_defer_ext:
+                    return None
             order = self._build_long_order(bar, broker, risk)
             if order:
                 return TradeProposal(order, self._compute_score(bar, 1), "london_breakout")
 
         if self._deferred_side == -1 and bar.close < self.lo - self.buffer:
+            if self.max_defer_ext is not None:
+                if (self.lo - self.buffer) - bar.close > self.max_defer_ext:
+                    return None
             order = self._build_short_order(bar, broker, risk)
             if order:
                 return TradeProposal(order, self._compute_score(bar, -1), "london_breakout")
