@@ -10,18 +10,37 @@ Validated with `python run_validate.py`. Parameters were chosen on the full
 2021–2025 data, so the in-sample/out-of-sample split below is a sanity check,
 not a clean blind test.
 
+Current config skips **Mondays only** (changed Nov 2026 from Mon+Tue; see "Day filter" below).
+
 | Period | Pairs | Trades | Return | CAGR | Max DD | PF | Win % |
 |---|---|---|---|---|---|---|---|
-| 2021–2023 (in-sample) | EUR + GBP | 222 | +6.73% | 2.2%/yr | -6.93% | 1.18 | 47.7 |
-| 2024–2025 (out-of-sample) | EUR + GBP | 126 | +4.83% | 2.4%/yr | -5.98% | 1.27 | 46.8 |
-| 2021–2025 | EUR + GBP | 348 | +11.70% | 2.2%/yr | -10.58% | 1.21 | 47.4 |
-| 2021–2025 | EURUSD only | 134 | +6.68% | 1.3%/yr | -4.43% | 1.35 | 52.2 |
-| 2021–2025 | GBPUSD only | 214 | +5.02% | 1.0%/yr | -8.04% | 1.13 | 44.4 |
+| 2021–2023 | EUR + GBP | 299 | +11.25% | 3.6%/yr | -6.02% | 1.23 | 48.8 |
+| 2024–2025 | EUR + GBP | 173 | +4.62% | 2.3%/yr | -7.39% | 1.18 | 45.7 |
+| 2021–2025 | EUR + GBP | 472 | +16.15% | 3.1%/yr | -10.22% | 1.21 | 47.7 |
+| 2021–2025 | EURUSD only | 188 | +6.25% | 1.2%/yr | -4.85% | 1.24 | 47.9 |
+| 2021–2025 | GBPUSD only | 284 | +9.90% | 1.9%/yr | -6.86% | 1.20 | 47.5 |
 
-**By year (combined):** 2021 +9.6% · 2022 +1.1% · 2023 −3.6% · 2024 −3.9% · 2025 +8.9%
+**By year (combined):** 2021 +9.2% · 2022 +1.5% · 2023 +0.4% · 2024 −4.4% · 2025 +9.2%
+
+### Day filter: why only Monday is skipped
+Total R by weekday, all trades, both pairs, no days skipped:
+
+| | 2021 | 2022 | 2023 | 2024 | 2025 | Total |
+|---|---|---|---|---|---|---|
+| Mon | −2.5 | −5.7 | −1.7 | +2.5 | −1.2 | **−8.6** (lost 4 of 5 years) |
+| Tue | −0.7 | +0.5 | +8.9 | −1.1 | +0.8 | +8.4 |
+| Wed | +5.4 | −0.4 | −4.1 | −0.5 | +5.9 | +6.3 |
+| Thu | +5.7 | −0.6 | −2.4 | −5.4 | −0.7 | −3.4 |
+| Fri | +8.4 | +3.5 | −1.7 | −2.6 | +13.5 | +21.1 |
+
+Skip Mon+Tue (old): +11.7%, −10.6% DD · **Skip Mon only: +16.2%, −10.2% DD** · Every day: +11.7%, −10.5% DD.
+Each weekday-year is only ~25 trades, so treat this as weak evidence. Monday at
+least has a plausible cause: its Asian range is built from the thin Sunday open.
+
+The robustness table below was run with the old Mon+Tue filter.
 
 What this means:
-- The edge is real but small: about **+0.07 R per trade**, roughly 2%/yr at 0.5% risk.
+- The edge is real but small: about **+0.07 R per trade**, roughly 3%/yr at 0.5% risk.
 - Results are lumpy. Two strong years carry three flat or losing ones.
 - About 90% of trades are London Breakout trades. The Sweep fires only ~6 times a year.
 - **Scaling risk does not reach 10%/yr safely.** At 1% risk: ~4.3%/yr, −20% max DD.
@@ -99,7 +118,7 @@ setup. The highest-scoring proposal takes the one trade slot per pair per day
 - **Target:** opposite side of the Asian range; skipped if R/R < 1.5
 - **SMT filter (hard):** EUR swept but GBP did not, or vice versa
 - **Breakeven:** stop moves to entry once the trade is +1R
-- **Days:** skips Monday and Tuesday
+- **Days:** skips Monday
 - **Score:** 100 + 20 (SMT) + 10/5 (tight/moderate range)
 
 ### 2. London Breakout: deferred fallback (score 60–77)
@@ -111,7 +130,7 @@ setup. The highest-scoring proposal takes the one trade slot per pair per day
 - **Stop:** opposite side of the Asian range (avg ~45 pips)
 - **Target:** 2R. In practice only ~5% of trades reach it; most close at the session exit.
 - **Breakeven:** stop moves to entry at +1R
-- **Days:** skips Monday and Tuesday
+- **Days:** skips Monday
 
 All positions close at **16:00 London** if still open.
 

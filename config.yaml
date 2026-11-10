@@ -70,7 +70,8 @@ strategies:
       reward_risk: 2.0
       ema_filter: false
       daily_ema_period: 10
-      skip_days: [0, 1]          # skip Mon+Tue — both are losing days historically
+      skip_days: [0]             # skip Monday only: lost in 4 of 5 years (2021-25). Tuesday was
+                                 # net positive, so it trades again (Nov 2026: +11.7% -> +16.2%)
       smt_filter: true           # GBPUSD now a live pair → SMT divergence re-enabled as hard filter
       smt_min_pips: 1.0
       trail_to_breakeven_rr: 1.0 # move stop to entry when price is 1R ahead (breakeven protection)
@@ -89,7 +90,7 @@ strategies:
       atr_period: 14
       atr_stop_mult: 1.5
       ema_filter: false
-      skip_days: [0, 1]
+      skip_days: [0]             # Monday only (see london_sweep)
       defer_until: "10:30"       # wait for sweep window to close before proposing
       max_defer_extension_pips: 15  # skip if price ran >15 pips beyond range by 10:30
       trail_to_breakeven_rr: 1.0 # stop -> entry at +1R. (Before the ownership fix the Sweep
