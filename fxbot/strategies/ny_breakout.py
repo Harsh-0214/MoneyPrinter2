@@ -29,6 +29,8 @@ class NYOpenBreakout:
         self.stop_mode = cfg.get("stop_mode",      "range")
         self.atr_mult  = cfg.get("atr_stop_mult",  1.5)
         self.max_trades = cfg.get("max_trades_per_day", 1)
+        raw_skip = cfg.get("skip_days", [])
+        self._skip_days = set(int(d) for d in raw_skip)
         self.day = None
 
     def _reset_day(self, day):
@@ -40,6 +42,10 @@ class NYOpenBreakout:
     def on_bar(self, bar, local_day, local_min, broker, risk):
         if local_day != self.day:
             self._reset_day(local_day)
+            if self._skip_days:
+                dow = int(local_day.astype("datetime64[D]").astype(object).weekday())
+                if dow in self._skip_days:
+                    self.trades_today = self.max_trades
 
         if self.RANGE_START <= local_min < self.RANGE_END:
             self.hi = max(self.hi, bar.high)

@@ -52,18 +52,52 @@ def _load_smt_pair(smt_cfg, main_df):
     return main_df
 
 
+def _build_strategies(cfg):
+    """Instantiate strategies from config.
+
+    Supports two modes:
+      - Single:  cfg["strategy"]["name"] selects one strategy (legacy)
+      - Multi:   cfg["strategies"] is a dict with "morning" and "afternoon" lists,
+                 each being a list of {name, ...params} dicts in priority order.
+
+    Returns (morning_strategies, afternoon_strategies).
+    Morning strategies share one trade slot per day (first to fire wins).
+    Afternoon strategies share a separate slot per day.
+    """
+    if "strategies" in cfg:
+        def _make(spec):
+            cls = STRATEGY_MAP[spec["name"]]
+            return cls(spec, PIP)
+        morning   = [_make(s) for s in cfg["strategies"].get("morning",   [])]
+        afternoon = [_make(s) for s in cfg["strategies"].get("afternoon", [])]
+    else:
+        s_cfg = cfg["strategy"]
+        cls = STRATEGY_MAP.get(s_cfg.get("name", "london_breakout"), LondonBreakout)
+        morning   = [cls(s_cfg, PIP)]
+        afternoon = []
+    return morning, afternoon
+
+
 def run_backtest(df, cfg, strategy_cls=None):
-    s_cfg, c_cfg = cfg["strategy"], cfg["costs"]
+    # Allow caller to pass a single class directly (used by tests and grid scripts)
+    if strategy_cls is not None:
+        single_cfg = cfg.get("strategy", {})
+        morning   = [strategy_cls(single_cfg, PIP)]
+        afternoon = []
+        ref_cfg   = single_cfg
+    else:
+        morning, afternoon = _build_strategies(cfg)
+        ref_cfg = cfg.get("strategy", (cfg["strategies"]["morning"][0]
+                                       if "strategies" in cfg else {}))
+
+    c_cfg = cfg["costs"]
     df = df.copy()
     df["spread_pips"] = compute_spread_pips(df, c_cfg)
-    df["atr"] = add_atr(df, s_cfg.get("atr_period", 14))
-    # Intrabar EMA (used by LondonBreakout's ema_filter)
-    df["ema"] = df["close"].ewm(span=s_cfg.get("ema_period", 50), adjust=False).mean()
-    # Daily-close EMA: shift(1) so each bar only sees *previous* day's close — no lookahead
+    df["atr"] = add_atr(df, ref_cfg.get("atr_period", 14))
+    df["ema"] = df["close"].ewm(span=ref_cfg.get("ema_period", 50), adjust=False).mean()
     daily_close = df["close"].resample("1D").last().shift(1)
-    daily_ema_raw = daily_close.ewm(span=s_cfg.get("daily_ema_period", 10), adjust=False).mean()
+    daily_ema_raw = daily_close.ewm(span=ref_cfg.get("daily_ema_period", 10), adjust=False).mean()
     df["daily_ema"] = daily_ema_raw.reindex(df.index, method="ffill")
-    # SMT pair (e.g. GBPUSD for EURUSD strategy): merge high/low columns
     smt_cfg = cfg.get("smt", {})
     if smt_cfg:
         df = _load_smt_pair(smt_cfg, df)
@@ -75,20 +109,42 @@ def run_backtest(df, cfg, strategy_cls=None):
     broker = SimBroker(cfg["account"]["starting_equity"], c_cfg["slippage_pips"],
                        c_cfg["commission_per_lot_per_side"], PIP)
     risk = RiskManager(cfg["risk"], PIP)
-    if strategy_cls is None:
-        strategy_cls = STRATEGY_MAP.get(s_cfg.get("name", "london_breakout"), LondonBreakout)
-    strategy = strategy_cls(s_cfg, PIP)
 
     equity = np.empty(len(df))
-    prev_day = None
+    prev_day      = None
+    morning_fired = None   # day on which the morning slot was used
+    afternoon_fired = None # day on which the afternoon slot was used
+
     for i, bar in enumerate(df.itertuples()):
-        broker.on_bar(bar)                     # fills + stops/targets
+        broker.on_bar(bar)
         day = local_days[i]
+        lmin = local_mins[i]
         if day != prev_day:
             risk.new_day(broker.equity())
             prev_day = day
-        strategy.on_bar(bar, day, local_mins[i], broker, risk)   # decisions at bar close
+
+        n_before = len(broker.trades)
+
+        # Morning strategies: priority order, first to fire blocks the rest for the day
+        if morning_fired != day:
+            for strat in morning:
+                strat.on_bar(bar, day, lmin, broker, risk)
+                if len(broker.trades) > n_before:
+                    morning_fired = day
+                    n_before = len(broker.trades)
+                    break  # morning slot taken — skip remaining morning strategies
+
+        # Afternoon strategies: independent session, runs regardless of morning
+        if afternoon_fired != day:
+            for strat in afternoon:
+                strat.on_bar(bar, day, lmin, broker, risk)
+                if len(broker.trades) > n_before:
+                    afternoon_fired = day
+                    n_before = len(broker.trades)
+                    break
+
         equity[i] = broker.equity()
+
     broker.close_at_end()
     if len(equity):
         equity[-1] = broker.equity()

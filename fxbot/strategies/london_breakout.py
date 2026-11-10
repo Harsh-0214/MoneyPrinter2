@@ -35,8 +35,9 @@ class LondonBreakout:
         self.rr = cfg["reward_risk"]
         self.max_trades = cfg.get("max_trades_per_day", 1)
         self.ema_filter = cfg.get("ema_filter", False)
+        raw_skip = cfg.get("skip_days", [])
+        self._skip_days = set(int(d) for d in raw_skip)
         self.day = None
-        self.skipped_days = 0
 
     def _reset_day(self, day):
         self.day = day
@@ -47,6 +48,10 @@ class LondonBreakout:
     def on_bar(self, bar, local_day, local_min, broker, risk):
         if local_day != self.day:
             self._reset_day(local_day)
+            if self._skip_days:
+                dow = int(local_day.astype("datetime64[D]").astype(object).weekday())
+                if dow in self._skip_days:
+                    self.trades_today = self.max_trades
 
         # 1) build the range
         if self.range_start <= local_min < self.range_end:

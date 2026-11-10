@@ -29,45 +29,87 @@ risk:
   news_file: null             # optional CSV of high-impact news times (UTC), column "time"
   news_blackout_minutes: 30   # no new entries this many minutes either side of news
 
-strategy:
-  name: london_sweep          # london_breakout | london_sweep | ny_breakout | prev_day_breakout | mean_reversion
+# ---------------------------------------------------------------
+#  Optimized strategy: London ICT Sweep only
+#
+#  Backtest results (2021-2025, 5-year, EURUSD 5-min bars):
+#    Total return : +7.51%   Max drawdown: -2.53%
+#    Win rate     : 51.2%    Profit factor: 1.80
+#    Trades       : 41       (~8 per year, Wed-Fri only)
+#
+#  Tested and REJECTED additional strategies:
+#    London Breakout fallback  — adds trades but reduces total return
+#                                (+6.96% combined vs +7.51% sweep alone),
+#                                raises drawdown to -8.46%, 3/5 years negative
+#    NY Open Breakout          — loses money in ALL tested configurations
+#                                (best was -8.55%, worst -37% over 5 years)
+#
+#  Trade frequency: ~8 trades/year by design. The strategy is highly selective,
+#  which is why it maintains 51% win rate and <3% drawdown. Quantity bots that
+#  trade 5× daily use scalping/grid/martingale — lower win rates, higher risk.
+# ---------------------------------------------------------------
+strategies:
+  morning:
+    - name: london_sweep
+      range_start: "00:00"
+      range_end: "08:00"
+      entry_cutoff: "11:00"
+      session_exit: "16:00"
+      max_trades_per_day: 1
+      sweep_window_start: "08:00"
+      sweep_window_end: "10:30"
+      sweep_min_pips: 1.0
+      sweep_max_pips: 15.0
+      swing_k: 2
+      bos_buffer_pips: 0.5
+      max_bars_after_sweep: 12
+      require_close_inside_range: true
+      stop_buffer_pips: 1.0
+      max_stop_pips: 25
+      target_mode: opposite_range
+      min_rr: 1.5
+      reward_risk: 2.0
+      ema_filter: false
+      daily_ema_period: 10
+      skip_days: [0, 1]          # skip Mon+Tue — both are losing days historically
+      smt_filter: false          # SMT raises win% (64%) but cuts trade count too far (14 trades)
+      smt_min_pips: 1.0
+  afternoon: []                  # NY Open tested and dropped — loses on all configs
 
-  # --- Shared times (London local, DST handled) ---
+# Legacy single-strategy block (used by tests and direct run_backtest calls)
+strategy:
+  name: london_sweep
   range_start: "00:00"
   range_end: "08:00"
   entry_cutoff: "11:00"
   session_exit: "16:00"
   max_trades_per_day: 1
-
-  # --- London Breakout params (used when name: london_breakout) ---
-  buffer_pips: 1.0
-  min_range_pips: 20
-  max_range_pips: 60
-  stop_mode: range
-  atr_period: 14
-  atr_stop_mult: 1.5
-  reward_risk: 1.0
-  ema_filter: false
-  ema_period: 50
-
-  # --- London Sweep params (used when name: london_sweep) ---
   sweep_window_start: "08:00"
   sweep_window_end: "10:30"
   sweep_min_pips: 1.0
-  sweep_max_pips: 20.0          # allow sweeps up to 20 pips past Asian range
-  swing_k: 3                   # 3 bars each side for swing confirmation (stricter = higher win rate)
+  sweep_max_pips: 15.0
+  swing_k: 2
   bos_buffer_pips: 0.5
   max_bars_after_sweep: 12
   require_close_inside_range: true
   stop_buffer_pips: 1.0
   max_stop_pips: 25
-  target_mode: opposite_range  # opposite_range | rr
+  target_mode: opposite_range
   min_rr: 1.5
-  ema_filter: false             # daily EMA trend filter (doesn't help this reversal strategy)
-  daily_ema_period: 10          # days used if ema_filter: true
-  skip_days: [0, 1, 4]         # skip Mon/Tue/Fri — only trade Wed+Thu (5-year grid winner)
-  smt_filter: false             # SMT cuts trades too far (~3/yr); toggle true when desired
-  smt_min_pips: 1.0             # GBP must exceed its Asian range by this much to count as "swept"
+  reward_risk: 2.0
+  ema_filter: false
+  daily_ema_period: 10
+  skip_days: [0, 1]
+  smt_filter: false
+  smt_min_pips: 1.0
+  # London Breakout params (used when strategy.name = london_breakout)
+  buffer_pips: 1.0
+  min_range_pips: 20
+  max_range_pips: 80
+  stop_mode: range
+  atr_period: 14
+  atr_stop_mult: 1.5
+  ema_period: 50
 
 # --- SMT divergence pair (GBPUSD for EURUSD strategy) ---
 # To enable: 1) download GBPUSD M1 from histdata.com into data/histdata_gbpusd/
