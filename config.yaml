@@ -54,8 +54,8 @@ strategy:
   sweep_window_start: "08:00"
   sweep_window_end: "10:30"
   sweep_min_pips: 1.0
-  sweep_max_pips: 15.0
-  swing_k: 2
+  sweep_max_pips: 20.0          # allow sweeps up to 20 pips past Asian range
+  swing_k: 3                   # 3 bars each side for swing confirmation (stricter = higher win rate)
   bos_buffer_pips: 0.5
   max_bars_after_sweep: 12
   require_close_inside_range: true
@@ -65,8 +65,8 @@ strategy:
   min_rr: 1.5
   ema_filter: false             # daily EMA trend filter (doesn't help this reversal strategy)
   daily_ema_period: 10          # days used if ema_filter: true
-  skip_days: [0, 1]             # skip Mon(0) and Tue(1) — data shows they lose money
-  smt_filter: true              # GBPUSD divergence filter: skip when both pairs swept same side
+  skip_days: [0, 1, 4]         # skip Mon/Tue/Fri — only trade Wed+Thu (5-year grid winner)
+  smt_filter: false             # SMT cuts trades too far (~3/yr); toggle true when desired
   smt_min_pips: 1.0             # GBP must exceed its Asian range by this much to count as "swept"
 
 # --- SMT divergence pair (GBPUSD for EURUSD strategy) ---
