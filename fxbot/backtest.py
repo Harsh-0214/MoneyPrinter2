@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 
 from .brokers import SimBroker, compute_spread_pips
-from .data import PIP
+from .data import PIP, load_csv, resample
 from .risk import RiskManager
 from .strategies import (LondonBreakout, LondonSweep, MeanReversion,
                           NYOpenBreakout, PrevDayBreakout)
@@ -27,6 +27,31 @@ def add_atr(df, period):
     return tr.rolling(period).mean()
 
 
+def _load_smt_pair(smt_cfg, main_df):
+    """Load the SMT confirmation pair and merge its high/low onto the main dataframe.
+
+    Returns the main dataframe with two new columns: smt_high, smt_low.
+    Both are NaN when the SMT pair has no bar at that timestamp.
+    """
+    path = smt_cfg.get("path")
+    if not path:
+        return main_df
+    import os
+    if not os.path.exists(path):
+        print(f"[SMT] Warning: {path} not found — SMT filter disabled")
+        return main_df
+    tz   = smt_cfg.get("source_tz", "UTC")
+    tf   = smt_cfg.get("timeframe", "5min")
+    raw  = load_csv(path, tz)
+    bars = resample(raw, tf)
+    # Align to main df index; keep only high and low
+    merged = bars[["high", "low"]].reindex(main_df.index, method=None)
+    main_df = main_df.copy()
+    main_df["smt_high"] = merged["high"]
+    main_df["smt_low"]  = merged["low"]
+    return main_df
+
+
 def run_backtest(df, cfg, strategy_cls=None):
     s_cfg, c_cfg = cfg["strategy"], cfg["costs"]
     df = df.copy()
@@ -38,6 +63,10 @@ def run_backtest(df, cfg, strategy_cls=None):
     daily_close = df["close"].resample("1D").last().shift(1)
     daily_ema_raw = daily_close.ewm(span=s_cfg.get("daily_ema_period", 10), adjust=False).mean()
     df["daily_ema"] = daily_ema_raw.reindex(df.index, method="ffill")
+    # SMT pair (e.g. GBPUSD for EURUSD strategy): merge high/low columns
+    smt_cfg = cfg.get("smt", {})
+    if smt_cfg:
+        df = _load_smt_pair(smt_cfg, df)
 
     local = df.index.tz_convert("Europe/London").tz_localize(None)
     local_days = local.values.astype("datetime64[D]")

@@ -8,19 +8,31 @@ Histdata MetaTrader format:
   - Timestamps in New York time (fixed UTC-5, no DST)
 
 Usage:
-    python combine_histdata.py
+    python combine_histdata.py                   # EURUSD  → data/EURUSD_M1_histdata.csv
+    python combine_histdata.py --symbol GBPUSD   # GBPUSD  → data/GBPUSD_M1_histdata.csv
 
-Output: data/EURUSD_M1_histdata.csv
-  - header: time,open,high,low,close
-  - timestamps in UTC
-  - ready for: source_tz: UTC  in config.yaml
+Input directory convention:
+    EURUSD  →  data/histdata/      (original location)
+    GBPUSD  →  data/histdata_gbpusd/
+    USDJPY  →  data/histdata_usdjpy/   (etc.)
 """
+import argparse
 from pathlib import Path
 import pandas as pd
 
-HISTDATA_DIR = Path("data/histdata")
-OUTPUT      = Path("data/EURUSD_M1_histdata.csv")
-NY_OFFSET   = pd.Timedelta(hours=5)   # histdata uses fixed UTC-5
+NY_OFFSET = pd.Timedelta(hours=5)   # histdata uses fixed UTC-5
+
+
+def histdata_dir(symbol: str) -> Path:
+    # Both EURUSD and GBPUSD (and other pairs) may live in the same data/histdata/ folder
+    shared = Path("data/histdata")
+    if list(shared.glob(f"DAT_MT_{symbol.upper()}_M1_*.csv")):
+        return shared
+    return Path(f"data/histdata_{symbol.lower()}")
+
+
+def output_path(symbol: str) -> Path:
+    return Path(f"data/{symbol.upper()}_M1_histdata.csv")
 
 
 def load_one(path):
@@ -30,19 +42,25 @@ def load_one(path):
         names=["date", "time_str", "open", "high", "low", "close", "volume"],
         dtype={"date": str, "time_str": str},
     )
-    # Parse datetime and shift to UTC
     raw = pd.to_datetime(df["date"] + " " + df["time_str"], format="%Y.%m.%d %H:%M")
-    ts = raw + NY_OFFSET                     # fixed UTC-5 → UTC
+    ts = raw + NY_OFFSET
     ts = ts.dt.tz_localize("UTC")
     df.index = ts
     df.index.name = "time"
     return df[["open", "high", "low", "close"]].astype(float)
 
 
-def main():
-    files = sorted(HISTDATA_DIR.glob("DAT_MT_EURUSD_M1_*.csv"))
+def combine(symbol: str):
+    src = histdata_dir(symbol)
+    out = output_path(symbol)
+    pattern = f"DAT_MT_{symbol.upper()}_M1_*.csv"
+    files = sorted(src.glob(pattern))
     if not files:
-        raise SystemExit(f"No CSV files found in {HISTDATA_DIR}")
+        raise SystemExit(
+            f"No files matching {pattern} found in {src}\n"
+            f"Download {symbol} M1 data from histdata.com (MetaTrader format) "
+            f"and place the CSV files in {src}/"
+        )
 
     frames = []
     for f in files:
@@ -57,14 +75,17 @@ def main():
     print(f"\nCombined: {len(combined):,} bars")
     print(f"Range:    {combined.index[0]} to {combined.index[-1]}")
 
-    OUTPUT.parent.mkdir(exist_ok=True)
-    combined.to_csv(OUTPUT)
-    print(f"Saved: {OUTPUT}")
-    print("\nNext: update config.yaml")
-    print("  data:")
-    print(f"    path: {OUTPUT}")
-    print("    source_tz: UTC")
-    print("    timeframe: 5min")
+    out.parent.mkdir(exist_ok=True)
+    combined.to_csv(out)
+    print(f"Saved: {out}")
+    return out
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Combine histdata.com M1 CSV files")
+    parser.add_argument("--symbol", default="EURUSD", help="Currency pair (default: EURUSD)")
+    args = parser.parse_args()
+    combine(args.symbol)
 
 
 if __name__ == "__main__":

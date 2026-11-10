@@ -3,7 +3,7 @@
 # ============================================================
 
 data:
-  path: data/EURUSD_M1_histdata.csv   # 4 years of M1 bars from histdata.com (2022-2025)
+  path: data/EURUSD_M1_histdata.csv   # 5 years of M1 bars from histdata.com (2021-2025)
   source_tz: "UTC"            # histdata MetaTrader export is UTC (converted in combine_histdata.py)
                               #   Switch back to data/EURUSD_M5.csv + source_tz: NY+7 for live replay
   timeframe: 5min             # bars the strategy runs on (resampled from the file)
@@ -66,6 +66,17 @@ strategy:
   ema_filter: false             # daily EMA trend filter (doesn't help this reversal strategy)
   daily_ema_period: 10          # days used if ema_filter: true
   skip_days: [0, 1]             # skip Mon(0) and Tue(1) — data shows they lose money
+  smt_filter: true              # GBPUSD divergence filter: skip when both pairs swept same side
+  smt_min_pips: 1.0             # GBP must exceed its Asian range by this much to count as "swept"
+
+# --- SMT divergence pair (GBPUSD for EURUSD strategy) ---
+# To enable: 1) download GBPUSD M1 from histdata.com into data/histdata_gbpusd/
+#            2) run: python combine_histdata.py --symbol GBPUSD
+#            3) set strategy.smt_filter: true
+smt:
+  path: data/GBPUSD_M1_histdata.csv
+  source_tz: "UTC"
+  timeframe: 5min
 
 output:
   dir: results

@@ -7,6 +7,8 @@ Covers:
   4. BOS never happens → no trade
   5. Long mirror case
   6. Synthetic random-walk: should lose (no edge in random data)
+  7. SMT filter blocks trade when confirmation pair also swept
+  8. SMT filter allows trade when confirmation pair did NOT sweep
 """
 import numpy as np
 import pandas as pd
@@ -43,12 +45,14 @@ CFG = {
 PIP_ = PIP
 
 
-def _make_bar(open_, high, low, close, spread_pips=1.0, atr=10 * PIP_):
+def _make_bar(open_, high, low, close, spread_pips=1.0, atr=10 * PIP_,
+              smt_high=float("nan"), smt_low=float("nan")):
     """Return a namedtuple that mimics itertuples() output."""
     from collections import namedtuple
-    Bar = namedtuple("Bar", ["Index", "open", "high", "low", "close", "spread_pips", "atr", "ema"])
+    Bar = namedtuple("Bar", ["Index", "open", "high", "low", "close",
+                              "spread_pips", "atr", "ema", "smt_high", "smt_low"])
     ts = pd.Timestamp("2026-01-02 09:00:00", tz="UTC")
-    return Bar(ts, open_, high, low, close, spread_pips, atr, 1.08)
+    return Bar(ts, open_, high, low, close, spread_pips, atr, 1.08, smt_high, smt_low)
 
 
 def _day():
@@ -309,3 +313,94 @@ def test_synthetic_no_edge():
         "this suggests a lookahead bug!"
     )
     print(f"\nSynthetic test: {m['trades']} trades, return={m['total_return_pct']:.2f}%")
+
+
+# ---------------------------------------------------------------------------
+# Test 7: SMT filter blocks trade when confirmation pair also swept
+# ---------------------------------------------------------------------------
+
+def test_smt_blocks_when_confirmation_pair_also_swept():
+    """When EUR sweeps high AND GBP also sweeps its Asian high → both pairs
+    moved together → real breakout, not a stop hunt → SMT filter must block entry."""
+    cfg = {**CFG, "smt_filter": True, "smt_min_pips": 1.0}
+    strat = LondonSweep(cfg, PIP_)
+    broker = FakeBroker()
+    risk = FakeRisk()
+    day = _day()
+    asian_hi, asian_lo = 1.0850, 1.0800
+    gbp_asian_hi = 1.2600  # GBPUSD Asian high
+
+    # Asian range bars — include GBP high/low
+    for m in range(0, 480, 5):
+        bar = _make_bar(1.0820, asian_hi, asian_lo, 1.0820,
+                        smt_high=gbp_asian_hi, smt_low=1.2550)
+        strat.on_bar(bar, day, m, broker, risk)
+
+    # Sweep window bars: EUR sweeps high, GBP also sweeps its Asian high
+    sweep_bars = [
+        # EUR                                           GBP H/L
+        (1.0848, 1.0852, 1.0845, 1.0848,  gbp_asian_hi + 0.0005, 1.2595),  # idx 0
+        (1.0847, 1.0851, 1.0843, 1.0847,  gbp_asian_hi + 0.0003, 1.2594),  # idx 1
+        (1.0845, 1.0847, 1.0840, 1.0845,  gbp_asian_hi + 0.0002, 1.2593),  # idx 2 — EUR swing low
+        (1.0846, 1.0850, 1.0843, 1.0846,  gbp_asian_hi + 0.0003, 1.2594),  # idx 3
+        (1.0848, 1.0852, 1.0845, 1.0848,  gbp_asian_hi + 0.0004, 1.2595),  # idx 4 — confirms swing
+        # GBP sweeps its own Asian high here (> gbp_asian_hi + smt_min_pips)
+        (1.0855, 1.0860, 1.0853, 1.0855,  gbp_asian_hi + 0.0015, 1.2596),  # idx 5 — EUR sweep + GBP sweep
+        (1.0853, 1.0855, 1.0848, 1.0852,  gbp_asian_hi + 0.0010, 1.2595),  # idx 6
+        (1.0848, 1.0850, 1.0838, 1.0838,  gbp_asian_hi + 0.0005, 1.2594),  # idx 7 — EUR BOS
+    ]
+    for i, row in enumerate(sweep_bars):
+        o, h, l, c, sh, sl = row
+        bar = _make_bar(o, h, l, c, smt_high=sh, smt_low=sl)
+        strat.on_bar(bar, day, 480 + i * 5, broker, risk)
+
+    # GBP also swept → SMT divergence NOT present → no trade
+    assert len(broker.orders) == 0, (
+        f"SMT filter should have blocked the trade (GBP also swept), got {len(broker.orders)} order(s)"
+    )
+    assert strat.smt_hi_swept, "GBP should be marked as having swept its Asian high"
+
+
+# ---------------------------------------------------------------------------
+# Test 8: SMT filter allows trade when confirmation pair did NOT sweep
+# ---------------------------------------------------------------------------
+
+def test_smt_allows_when_confirmation_pair_did_not_sweep():
+    """When EUR sweeps high but GBP did NOT sweep its Asian high → divergence
+    confirmed → SMT filter must allow the short entry."""
+    cfg = {**CFG, "smt_filter": True, "smt_min_pips": 1.0}
+    strat = LondonSweep(cfg, PIP_)
+    broker = FakeBroker()
+    risk = FakeRisk()
+    day = _day()
+    asian_hi, asian_lo = 1.0850, 1.0800
+    gbp_asian_hi = 1.2600
+
+    for m in range(0, 480, 5):
+        bar = _make_bar(1.0820, asian_hi, asian_lo, 1.0820,
+                        smt_high=gbp_asian_hi, smt_low=1.2550)
+        strat.on_bar(bar, day, m, broker, risk)
+
+    # Sweep window: EUR sweeps high, GBP stays BELOW its Asian high (divergence)
+    sweep_bars = [
+        # EUR                                           GBP H/L — stays below gbp_asian_hi
+        (1.0848, 1.0852, 1.0845, 1.0848,  gbp_asian_hi - 0.0005, 1.2590),  # idx 0
+        (1.0847, 1.0851, 1.0843, 1.0847,  gbp_asian_hi - 0.0004, 1.2591),  # idx 1
+        (1.0845, 1.0847, 1.0840, 1.0845,  gbp_asian_hi - 0.0006, 1.2589),  # idx 2 — EUR swing low
+        (1.0846, 1.0850, 1.0843, 1.0846,  gbp_asian_hi - 0.0005, 1.2590),  # idx 3
+        (1.0848, 1.0852, 1.0845, 1.0848,  gbp_asian_hi - 0.0004, 1.2591),  # idx 4 — confirms swing
+        (1.0855, 1.0860, 1.0853, 1.0855,  gbp_asian_hi - 0.0003, 1.2592),  # idx 5 — EUR sweeps, GBP doesn't
+        (1.0853, 1.0855, 1.0848, 1.0852,  gbp_asian_hi - 0.0004, 1.2591),  # idx 6
+        (1.0848, 1.0850, 1.0838, 1.0838,  gbp_asian_hi - 0.0005, 1.2590),  # idx 7 — EUR BOS
+    ]
+    for i, row in enumerate(sweep_bars):
+        o, h, l, c, sh, sl = row
+        bar = _make_bar(o, h, l, c, smt_high=sh, smt_low=sl)
+        strat.on_bar(bar, day, 480 + i * 5, broker, risk)
+
+    # GBP did NOT sweep → divergence → trade should fire
+    assert len(broker.orders) == 1, (
+        f"SMT divergence confirmed (GBP didn't sweep) — expected 1 order, got {len(broker.orders)}"
+    )
+    assert broker.orders[0].side == -1, "Expected short"
+    assert not strat.smt_hi_swept, "GBP should NOT be marked as swept"

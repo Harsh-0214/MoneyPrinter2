@@ -51,6 +51,10 @@ class LondonSweep:
         # skip_days: set of weekday ints to skip (0=Mon … 4=Fri); empty = trade every day
         raw_skip = cfg.get("skip_days", [])
         self._skip_days   = set(int(d) for d in raw_skip)
+        # SMT divergence filter: only enter when the confirmation pair did NOT also sweep
+        # smt_high / smt_low columns are merged onto bars by backtest.py
+        self.smt_filter   = cfg.get("smt_filter",              False)
+        self.smt_min      = cfg.get("smt_min_pips",             1.0) * pip
 
         self.day = None
         self._reset_day(None)
@@ -84,6 +88,12 @@ class LondonSweep:
         self.ext_lo_idx  = None
 
         self.trades_today = 0
+
+        # SMT pair tracking (GBPUSD when filtering EURUSD)
+        self.smt_asian_hi   = float("-inf")
+        self.smt_asian_lo   = float("inf")
+        self.smt_hi_swept   = False   # True if SMT pair also swept its Asian high
+        self.smt_lo_swept   = False   # True if SMT pair also swept its Asian low
 
     # ------------------------------------------------------------------ #
     #  Swing detection (no lookahead)                                     #
@@ -160,10 +170,17 @@ class LondonSweep:
         if candidate >= 0:
             self._try_confirm_swing(candidate)
 
-        # --- build Asian range ---
+        # --- build Asian range (EUR and SMT pair) ---
         if self.range_start <= local_min < self.range_end:
             self.asian_hi = max(self.asian_hi, bar.high)
             self.asian_lo = min(self.asian_lo, bar.low)
+            if self.smt_filter:
+                sh = getattr(bar, "smt_high", float("nan"))
+                sl = getattr(bar, "smt_low",  float("nan"))
+                if sh == sh:  # not NaN
+                    self.smt_asian_hi = max(self.smt_asian_hi, sh)
+                if sl == sl:
+                    self.smt_asian_lo = min(self.smt_asian_lo, sl)
 
         # --- session exit (always check even after entry_cutoff) ---
         if broker.position() is not None:
@@ -175,7 +192,17 @@ class LondonSweep:
         if self.asian_hi == float("-inf"):
             return
 
-        # --- track sweeps during sweep window ---
+        # --- track sweeps during sweep window (EUR and SMT pair) ---
+        if self.smt_filter and self.sweep_start <= local_min < self.sweep_end:
+            sh = getattr(bar, "smt_high", float("nan"))
+            sl = getattr(bar, "smt_low",  float("nan"))
+            if sh == sh and self.smt_asian_hi != float("-inf"):
+                if sh > self.smt_asian_hi + self.smt_min:
+                    self.smt_hi_swept = True
+            if sl == sl and self.smt_asian_lo != float("inf"):
+                if sl < self.smt_asian_lo - self.smt_min:
+                    self.smt_lo_swept = True
+
         if self.sweep_start <= local_min < self.sweep_end:
             if not self.high_failed:
                 if bar.high > self.asian_hi + self.sweep_max:
@@ -211,8 +238,17 @@ class LondonSweep:
         ema_ok_short = (not self.ema_filter) or (daily_ema == daily_ema and bar.close < daily_ema)
         ema_ok_long  = (not self.ema_filter) or (daily_ema == daily_ema and bar.close > daily_ema)
 
+        # SMT divergence filter:
+        #   Short valid when EUR swept its high BUT GBP did NOT also sweep its high.
+        #   Long  valid when EUR swept its low  BUT GBP did NOT also sweep its low.
+        #   Both pairs sweeping the same side = real breakout, not a stop hunt → skip.
+        #   Falls through (allows trade) when SMT data is unavailable for the day.
+        smt_data_ok  = (not self.smt_filter) or (self.smt_asian_hi != float("-inf"))
+        smt_ok_short = (not self.smt_filter) or (not smt_data_ok) or (not self.smt_hi_swept)
+        smt_ok_long  = (not self.smt_filter) or (not smt_data_ok) or (not self.smt_lo_swept)
+
         # Short setup (high was swept)
-        if ema_ok_short and self.high_swept and not self.high_failed and self.ext_hi_idx is not None:
+        if ema_ok_short and smt_ok_short and self.high_swept and not self.high_failed and self.ext_hi_idx is not None:
             if bar_idx - self.ext_hi_idx <= self.max_bars_bos:
                 sw = self._last_sw_low_before(self.ext_hi_idx)
                 if sw is not None:
@@ -225,7 +261,7 @@ class LondonSweep:
                             return
 
         # Long setup (low was swept)
-        if ema_ok_long and self.low_swept and not self.low_failed and self.ext_lo_idx is not None:
+        if ema_ok_long and smt_ok_long and self.low_swept and not self.low_failed and self.ext_lo_idx is not None:
             if bar_idx - self.ext_lo_idx <= self.max_bars_bos:
                 sw = self._last_sw_high_before(self.ext_lo_idx)
                 if sw is not None:
