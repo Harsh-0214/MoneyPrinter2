@@ -7,6 +7,8 @@ data/*.csv
 !data/.keep
 .env
 config.local.yaml
+config_v*.yaml
+data/histdata/
 *.pyc
 *.pyo
 .DS_Store
