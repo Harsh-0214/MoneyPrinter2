@@ -20,7 +20,8 @@ def _fake_mt5(n_minutes):
     rates["time"] = (ny - pd.Timestamp("1970-01-01")) // pd.Timedelta(seconds=1)
     rates["open"] = rates["close"] = 1.1
     rates["high"], rates["low"], rates["spread"] = 1.1005, 1.0995, 8
-    return SimpleNamespace(TIMEFRAME_M1=1, copy_rates_range=lambda *a: rates), now
+    return SimpleNamespace(TIMEFRAME_M1=1, TIMEFRAME_H1=16385, copy_rates_range=lambda *a: rates,
+                           copy_rates_from_pos=lambda *a: rates), now
 
 
 def test_fetch_drops_forming_bars():

@@ -68,8 +68,9 @@ strategies:
       target_mode: opposite_range
       min_rr: 1.5
       reward_risk: 2.0
-      ema_filter: false
-      daily_ema_period: 10
+      ema_filter: true           # daily trend filter: sell only below / buy only above the
+      daily_ema_period: 50       #   50-day average of daily closes (also used by the Breakout).
+                                 #   Nov 2026: any length 30-200 gave PF 1.27-1.36 vs 1.17 without.
       skip_days: [0]             # skip Monday only: lost in 4 of 5 years (2021-25). Tuesday was
                                  # net positive, so it trades again (Nov 2026: +11.7% -> +16.2%)
       smt_filter: true           # GBPUSD now a live pair → SMT divergence re-enabled as hard filter
@@ -91,6 +92,7 @@ strategies:
       atr_stop_mult: 1.5
       ema_filter: false
       skip_days: [0]             # Monday only (see london_sweep)
+      daily_trend_filter: true   # same 50-day trend filter as the Sweep
       defer_until: "10:30"       # wait for sweep window to close before proposing
       max_defer_extension_pips: 15  # skip if price ran >15 pips beyond range by 10:30
       trail_to_breakeven_rr: 1.0 # stop -> entry at +1R. (Before the ownership fix the Sweep
@@ -146,6 +148,7 @@ smt:
 # To add more pairs: append a block with symbol, data, and optional smt.
 pairs:
   - symbol: EURUSD
+    spread_pips: 1.4             # typical FOREX.com demo spread at London open (seen live Nov 2026)
     data:
       path: data/EURUSD_M1_histdata.csv
       source_tz: "UTC"
@@ -156,6 +159,7 @@ pairs:
       timeframe: 5min
 
   - symbol: GBPUSD
+    spread_pips: 2.0             # typical FOREX.com demo spread at London open (seen live Nov 2026)
     data:
       path: data/GBPUSD_M1_histdata.csv
       source_tz: "UTC"

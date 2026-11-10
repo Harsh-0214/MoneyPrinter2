@@ -141,6 +141,35 @@ def _london_local(ts_utc):
     return np.datetime64(local.date(), "D"), local.hour * 60 + local.minute
 
 
+_EMA_CACHE = {}
+
+
+def _add_daily_ema(mt5, symbol, cfg, bars):
+    """Add the daily-trend column the strategies filter on, computed exactly like
+    the backtest (fxbot.backtest.daily_ema_series) from ~320 days of H1 closes.
+    Recomputed once per UTC day per symbol."""
+    import pandas as pd
+    from fxbot.backtest import daily_ema_series, trend_period
+    from fxbot.data import server_ts_to_utc
+
+    period = trend_period(cfg)
+    key = (symbol, period, pd.Timestamp.now(tz="UTC").date())
+    ema = _EMA_CACHE.get(key)
+    if ema is None:
+        rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_H1, 0, 24 * 320)
+        if rates is None or len(rates) == 0:
+            log.warning("No H1 history for %s - daily trend filter has no data", symbol)
+            return
+        h1 = pd.DataFrame(rates)
+        h1.index = server_ts_to_utc(h1["time"].values)
+        h1 = h1[h1.index.notna()]
+        ema = daily_ema_series(h1["close"], period)
+        _EMA_CACHE.clear()
+        _EMA_CACHE[key] = ema
+        log.info("Daily trend: %d-day average of %s = %.5f", period, symbol, ema.iloc[-1])
+    bars["daily_ema"] = ema.reindex(bars.index, method="ffill")
+
+
 def _fetch_completed_bars(mt5, symbol, smt_symbol, cfg, start_utc):
     """M1 bars since start_utc -> completed 5-min bars with spread + SMT columns.
 
@@ -178,6 +207,8 @@ def _fetch_completed_bars(mt5, symbol, smt_symbol, cfg, start_utc):
     bars = bars[bars.index + tf_delta <= now]          # completed bars only
     bars = bars[bars.index >= pd.Timestamp(start_utc)]
     bars["spread_pips"] = compute_spread_pips(bars, cfg["costs"])
+
+    _add_daily_ema(mt5, symbol, cfg, bars)
 
     if smt_symbol:
         s1 = _m1(smt_symbol)

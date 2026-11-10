@@ -10,17 +10,37 @@ Validated with `python run_validate.py`. Parameters were chosen on the full
 2021–2025 data, so the in-sample/out-of-sample split below is a sanity check,
 not a clean blind test.
 
-Current config skips **Mondays only** (changed Nov 2026 from Mon+Tue; see "Day filter" below).
+Current config (Nov 2026): skips **Mondays only**, uses the **daily trend filter**
+(trade only in the direction of the 50-day average), and charges each pair its
+**real live spread** (EURUSD 1.4 pips, GBPUSD 2.0 pips).
 
 | Period | Pairs | Trades | Return | CAGR | Max DD | PF | Win % |
 |---|---|---|---|---|---|---|---|
-| 2021–2023 | EUR + GBP | 299 | +11.25% | 3.6%/yr | -6.02% | 1.23 | 48.8 |
-| 2024–2025 | EUR + GBP | 173 | +4.62% | 2.3%/yr | -7.39% | 1.18 | 45.7 |
-| 2021–2025 | EUR + GBP | 472 | +16.15% | 3.1%/yr | -10.22% | 1.21 | 47.7 |
-| 2021–2025 | EURUSD only | 188 | +6.25% | 1.2%/yr | -4.85% | 1.24 | 47.9 |
-| 2021–2025 | GBPUSD only | 284 | +9.90% | 1.9%/yr | -6.86% | 1.20 | 47.5 |
+| 2021–2023 | EUR + GBP | 169 | +10.25% | 3.3%/yr | -5.15% | 1.41 | 52.1 |
+| 2024–2025 | EUR + GBP | 103 | +3.10% | 1.5%/yr | -5.17% | 1.23 | 47.6 |
+| 2021–2025 | EUR + GBP | 271 | +14.07% | 2.7%/yr | -7.58% | 1.36 | 50.2 |
+| 2021–2025 | EURUSD only | 109 | +4.19% | 0.8%/yr | -5.42% | 1.30 | 48.6 |
+| 2021–2025 | GBPUSD only | 162 | +9.88% | 1.9%/yr | -3.90% | 1.40 | 51.2 |
 
-**By year (combined):** 2021 +9.2% · 2022 +1.5% · 2023 +0.4% · 2024 −4.4% · 2025 +9.2%
+**By year (combined):** 2021 +5.8% · 2022 +5.4% · 2023 −1.2% · 2024 −2.5% · 2025 +6.1%
+
+### Daily trend filter (higher timeframe)
+Same realistic spreads, both pairs, 2021–2025:
+
+| Setup | Return | Max DD | PF |
+|---|---|---|---|
+| No trend filter | +12.1% | −10.0% | 1.17 |
+| Trend filter, 10 / 20-day average | +4.7% / +7.5% | −7.8% / −8.3% | 1.11 / 1.19 |
+| **Trend filter, 30–200-day average** | **+10.7% to +14.1%** | **−6.7% to −8.9%** | **1.27–1.36** |
+| 1-minute candles instead of 5 | −5.7% to +7.8% | −13% to −17% | 0.95–1.08 |
+| 15-minute candles instead of 5 | +9.2% | −5.3% | 1.17 |
+
+The 50-day setting sits in a wide plateau (30–200 all work), so it isn't a
+lucky pick. The filter cuts trades by ~40% (EURUSD ≈ 21/yr) but roughly doubles
+the profit per trade. Only buys happen above the average and only sells below it.
+
+Without the trend filter, at the old 1-pip spread, the same setup showed +16.2%;
+see the day-filter table below.
 
 ### Day filter: why only Monday is skipped
 Total R by weekday, all trades, both pairs, no days skipped:

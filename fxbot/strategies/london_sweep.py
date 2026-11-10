@@ -5,8 +5,8 @@ Setup overview
 1. Build Asian range 00:00-08:00 London.
 2. During the sweep window (08:00-10:30) price "sweeps" just past the
    Asian high or low, running stop-losses.
-3. We wait for a confirmed Break-of-Structure (BOS) Ã¢â‚¬â€ a bar close back
-   through a swing low/high that formed BEFORE the sweep extreme Ã¢â‚¬â€ then
+3. We wait for a confirmed Break-of-Structure (BOS) — a bar close back
+   through a swing low/high that formed BEFORE the sweep extreme — then
    trade the reversal.
 
 Lookahead rule
@@ -149,7 +149,7 @@ class LondonSweep:
         return result
 
     # ------------------------------------------------------------------ #
-    #  State update (pure Ã¢â‚¬â€ no broker side-effects)                       #
+    #  State update (pure — no broker side-effects)                       #
     # ------------------------------------------------------------------ #
 
     def _update_state(self, bar, local_day, local_min):
@@ -217,7 +217,7 @@ class LondonSweep:
         """Score this sweep setup.  Always >= 100; always beats Breakout (60-80)."""
         score = 100.0
 
-        # SMT divergence: EUR swept its range but GBP did NOT Ã¢â€ â€™ genuine stop hunt
+        # SMT divergence: EUR swept its range but GBP did NOT → genuine stop hunt
         if self.smt_filter:
             smt_data_ok = self.smt_asian_hi != float("-inf")
             if smt_data_ok:
@@ -226,7 +226,7 @@ class LondonSweep:
                 elif side == 1 and not self.smt_lo_swept:
                     score += 20
 
-        # Tight Asian range Ã¢â€ â€™ more precise key levels
+        # Tight Asian range → more precise key levels
         range_pips = (self.asian_hi - self.asian_lo) / self.pip
         if range_pips < 15:
             score += 10
@@ -293,7 +293,7 @@ class LondonSweep:
         return Order(1, units, stop, target, "sweep_long")
 
     # ------------------------------------------------------------------ #
-    #  Proposal (multi-strategy mode Ã¢â‚¬â€ no broker.submit)                  #
+    #  Proposal (multi-strategy mode — no broker.submit)                  #
     # ------------------------------------------------------------------ #
 
     def propose(self, bar, local_day, local_min, broker, risk) -> Optional[TradeProposal]:
@@ -304,6 +304,8 @@ class LondonSweep:
         morning strategies and executes the highest-scoring one.
         """
         self._update_state(bar, local_day, local_min)
+        self._daily_ema = getattr(bar, "daily_ema", float("nan"))   # for describe()
+        self._last_close = bar.close
 
         # Session exit is handled here even in propose() so positions close on time
         if broker.position() is not None:
@@ -438,6 +440,9 @@ class LondonSweep:
                 msgs.append("entry window closed")
         if self.last_reject:
             msgs.append(self.last_reject)
+        de = getattr(self, "_daily_ema", float("nan"))
+        if self.ema_filter and de == de:
+            msgs.insert(0, "trend UP -> buys only" if self._last_close > de else "trend DOWN -> sells only")
         out["status"] = "Sweep: " + ("; ".join(msgs) or "idle")
         return out
 

@@ -34,6 +34,23 @@ def add_atr(df, period):
     return tr.rolling(period).mean()
 
 
+def daily_ema_series(close, period):
+    """EMA of DAILY closes (UTC days), shifted one day: the value seen during day D
+    uses closes up to D-1 only. Shared by the backtest and the live runner so both
+    see exactly the same trend line. Returns a series indexed at UTC midnights."""
+    daily_close = close.resample("1D").last().dropna().shift(1)
+    return daily_close.ewm(span=period, adjust=False).mean()
+
+
+def trend_period(cfg):
+    """daily_ema_period from the strategy stack (first spec that sets it), else legacy."""
+    for slot in ("morning", "afternoon"):
+        for spec in cfg.get("strategies", {}).get(slot, []):
+            if "daily_ema_period" in spec:
+                return int(spec["daily_ema_period"])
+    return int(cfg.get("strategy", {}).get("daily_ema_period", 10))
+
+
 def _load_smt_pair(smt_cfg, main_df):
     """Load the SMT confirmation pair and merge its high/low onto the main dataframe.
 
@@ -132,9 +149,8 @@ def run_backtest(df, cfg, strategy_cls=None):
     df["spread_pips"] = compute_spread_pips(df, c_cfg)
     df["atr"] = add_atr(df, ref_cfg.get("atr_period", 14))
     df["ema"] = df["close"].ewm(span=ref_cfg.get("ema_period", 50), adjust=False).mean()
-    daily_close = df["close"].resample("1D").last().shift(1)
-    daily_ema_raw = daily_close.ewm(span=ref_cfg.get("daily_ema_period", 10), adjust=False).mean()
-    df["daily_ema"] = daily_ema_raw.reindex(df.index, method="ffill")
+    period = trend_period(cfg) if strategy_cls is None else int(ref_cfg.get("daily_ema_period", 10))
+    df["daily_ema"] = daily_ema_series(df["close"], period).reindex(df.index, method="ffill")
     smt_cfg = cfg.get("smt", {})
     if smt_cfg:
         df = _load_smt_pair(smt_cfg, df)
@@ -288,6 +304,8 @@ def run_backtest_multi_pair(cfg):
         if end:
             pair_cfg["data"]["end"] = end
         pair_cfg["smt"] = pair.get("smt", {})
+        if pair.get("spread_pips") is not None:
+            pair_cfg["costs"]["spread_pips"] = pair["spread_pips"]
 
         raw = load_csv(pair_cfg["data"]["path"], pair_cfg["data"]["source_tz"])
         bars = resample(raw, pair_cfg["data"]["timeframe"])

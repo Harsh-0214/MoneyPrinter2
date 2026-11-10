@@ -68,13 +68,18 @@ def run_multi(pair_bars, cfg, start=None, end=None, symbols=None):
     c = copy.deepcopy(cfg)
     c["smt"] = {}                      # SMT columns are already merged in
     trades_all, pnl = [], None
+    pair_spread = {p["symbol"]: p.get("spread_pips") for p in cfg.get("pairs", [])}
     for sym, bars in pair_bars.items():
         if symbols and sym not in symbols:
             continue
         b = filter_dates(bars, start, end)
         if len(b) == 0:
             continue
-        t, eq = run_backtest(b, c)
+        cp = c
+        if pair_spread.get(sym) is not None and not cfg.get("_force_spread"):
+            cp = copy.deepcopy(c)
+            cp["costs"]["spread_pips"] = pair_spread[sym]
+        t, eq = run_backtest(b, cp)
         if len(t):
             t = t.copy()
             t.insert(0, "symbol", sym)
@@ -126,6 +131,8 @@ def set_param(cfg, dotted, value):
                 s[key] = value
     else:
         c[head][key] = value
+        if dotted == "costs.spread_pips":
+            c["_force_spread"] = True      # explicit spread test overrides per-pair spreads
     return c
 
 
@@ -161,7 +168,7 @@ def walk_forward(pair_bars, cfg):
 
 
 ROBUST_GRID = [
-    ("costs.spread_pips", [1.0, 1.5, 2.0]),
+    ("costs.spread_pips", [1.0, 1.5, 2.0, 2.5]),   # same spread on BOTH pairs (overrides per-pair)
     ("costs.slippage_pips", [0.2, 0.5]),
     ("sweep.swing_k", [1, 2, 3]),
     ("sweep.sweep_max_pips", [10.0, 15.0, 20.0]),
