@@ -5,8 +5,8 @@ Setup overview
 1. Build Asian range 00:00-08:00 London.
 2. During the sweep window (08:00-10:30) price "sweeps" just past the
    Asian high or low, running stop-losses.
-3. We wait for a confirmed Break-of-Structure (BOS) â€” a bar close back
-   through a swing low/high that formed BEFORE the sweep extreme â€” then
+3. We wait for a confirmed Break-of-Structure (BOS) Ã¢â‚¬â€ a bar close back
+   through a swing low/high that formed BEFORE the sweep extreme Ã¢â‚¬â€ then
    trade the reversal.
 
 Lookahead rule
@@ -97,6 +97,7 @@ class LondonSweep:
         self.ext_lo_idx  = None
         self.trades_today = 0
         self.skip_today = None
+        self.last_reject = None      # why the latest BOS signal was not traded
         self.smt_asian_hi = float("-inf")
         self.smt_asian_lo = float("inf")
         self.smt_hi_swept = False
@@ -148,7 +149,7 @@ class LondonSweep:
         return result
 
     # ------------------------------------------------------------------ #
-    #  State update (pure â€” no broker side-effects)                       #
+    #  State update (pure Ã¢â‚¬â€ no broker side-effects)                       #
     # ------------------------------------------------------------------ #
 
     def _update_state(self, bar, local_day, local_min):
@@ -216,7 +217,7 @@ class LondonSweep:
         """Score this sweep setup.  Always >= 100; always beats Breakout (60-80)."""
         score = 100.0
 
-        # SMT divergence: EUR swept its range but GBP did NOT â†’ genuine stop hunt
+        # SMT divergence: EUR swept its range but GBP did NOT Ã¢â€ â€™ genuine stop hunt
         if self.smt_filter:
             smt_data_ok = self.smt_asian_hi != float("-inf")
             if smt_data_ok:
@@ -225,7 +226,7 @@ class LondonSweep:
                 elif side == 1 and not self.smt_lo_swept:
                     score += 20
 
-        # Tight Asian range â†’ more precise key levels
+        # Tight Asian range Ã¢â€ â€™ more precise key levels
         range_pips = (self.asian_hi - self.asian_lo) / self.pip
         if range_pips < 15:
             score += 10
@@ -238,18 +239,25 @@ class LondonSweep:
     #  Order construction (read-only on broker/risk)                      #
     # ------------------------------------------------------------------ #
 
+    def _reject(self, bar, why):
+        import pandas as pd
+        t = pd.Timestamp(bar.Index).tz_convert("Europe/London").strftime("%H:%M")
+        self.last_reject = f"BOS at {t} not traded: {why}"
+
     def _build_short_order(self, bar, broker, risk) -> Optional[Order]:
         spread_px = bar.spread_pips * self.pip
         entry_est = bar.close
         stop      = self.ext_hi + self.stop_buf + spread_px
         stop_dist = stop - entry_est
         if stop_dist <= 0 or stop_dist > self.max_stop_px:
+            self._reject(bar, f"stop {stop_dist / self.pip:.1f}p > max {self.max_stop_px / self.pip:.0f}p")
             return None
 
         target = self.asian_lo if self.target_mode == "opposite_range" \
             else entry_est - self.rr * stop_dist
         rr_actual = (entry_est - target) / stop_dist if stop_dist > 0 else 0
         if rr_actual < self.min_rr:
+            self._reject(bar, f"reward/risk {rr_actual:.2f} < min {self.min_rr}")
             return None
 
         equity = broker.equity()
@@ -266,12 +274,14 @@ class LondonSweep:
         stop      = self.ext_lo - self.stop_buf
         stop_dist = entry_est - stop
         if stop_dist <= 0 or stop_dist > self.max_stop_px:
+            self._reject(bar, f"stop {stop_dist / self.pip:.1f}p > max {self.max_stop_px / self.pip:.0f}p")
             return None
 
         target = self.asian_hi if self.target_mode == "opposite_range" \
             else entry_est + self.rr * stop_dist
         rr_actual = (target - entry_est) / stop_dist if stop_dist > 0 else 0
         if rr_actual < self.min_rr:
+            self._reject(bar, f"reward/risk {rr_actual:.2f} < min {self.min_rr}")
             return None
 
         equity = broker.equity()
@@ -283,7 +293,7 @@ class LondonSweep:
         return Order(1, units, stop, target, "sweep_long")
 
     # ------------------------------------------------------------------ #
-    #  Proposal (multi-strategy mode â€” no broker.submit)                  #
+    #  Proposal (multi-strategy mode Ã¢â‚¬â€ no broker.submit)                  #
     # ------------------------------------------------------------------ #
 
     def propose(self, bar, local_day, local_min, broker, risk) -> Optional[TradeProposal]:
@@ -426,6 +436,8 @@ class LondonSweep:
                 msgs.append("watching for a sweep of the Asian high/low")
             elif local_min >= self.entry_cutoff:
                 msgs.append("entry window closed")
+        if self.last_reject:
+            msgs.append(self.last_reject)
         out["status"] = "Sweep: " + ("; ".join(msgs) or "idle")
         return out
 

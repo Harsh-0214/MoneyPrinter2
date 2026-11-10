@@ -43,6 +43,33 @@ def test_resolve_pair_uses_partner_for_smt():
     assert magic == cfg["live"]["magic"] + 1
 
 
+def test_status_changes_logged_once(caplog):
+    import logging
+    class S:
+        def __init__(self): self.msg = "Sweep: watching"
+        def describe(self, lmin): return {"status": self.msg}
+    s = S()
+    with caplog.at_level(logging.INFO, logger="fxbot"):
+        last = run_live._log_status_changes([s], 500, {})
+        last = run_live._log_status_changes([s], 505, last)      # unchanged -> no log
+        s.msg = "Sweep: high swept"
+        run_live._log_status_changes([s], 510, last)
+    lines = [r.getMessage() for r in caplog.records if r.getMessage().startswith("STATUS")]
+    assert lines == ["STATUS Sweep: watching", "STATUS Sweep: high swept"]
+
+
+def test_closed_trade_logged(caplog):
+    import logging
+    from fxbot.brokers.base import Trade
+    t = Trade(-1, 14000, pd.Timestamp("2026-11-10 10:30", tz="UTC"), 1.34283,
+              pd.Timestamp("2026-11-10 15:30", tz="UTC"), 1.33644, 125.99, 0.0, 2.0,
+              "[tp 1.33644]", "short_break")
+    with caplog.at_level(logging.INFO, logger="fxbot"):
+        run_live._log_closed_trade(SimpleNamespace(trades=[t]))
+    assert any("CLOSED short_break SELL" in r.getMessage() and "125.99" in r.getMessage()
+               for r in caplog.records)
+
+
 def test_build_morning_uses_strategy_stack():
     cfg = yaml.safe_load(open("config.yaml"))
     names = [type(s).__name__ for s in run_live._build_morning(cfg)]

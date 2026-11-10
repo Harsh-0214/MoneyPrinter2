@@ -188,6 +188,37 @@ def _fetch_completed_bars(mt5, symbol, smt_symbol, cfg, start_utc):
     return bars
 
 
+def _log_status_changes(strategies, local_min, last):
+    """Log each strategy's 'what I see' line whenever it changes."""
+    now = {}
+    for s in strategies:
+        if not hasattr(s, "describe"):
+            continue
+        try:
+            st = s.describe(local_min).get("status", "")
+        except Exception:
+            continue
+        now[type(s).__name__] = st
+        if st and last.get(type(s).__name__) != st:
+            log.info("STATUS %s", st)
+    return now
+
+
+def _log_closed_trade(broker):
+    """A position disappeared (stop / target hit at the broker, or our close)."""
+    try:
+        trades = broker.trades
+    except Exception:
+        trades = []
+    if not trades:
+        log.info("CLOSED position (no deal details available)")
+        return
+    t = trades[-1]
+    log.info("CLOSED %s %s %d units: entry %.5f -> exit %.5f  P/L %.2f  reason=%s",
+             t.tag, "BUY" if t.side == 1 else "SELL", t.units, t.entry_price,
+             t.exit_price, t.pnl, t.exit_reason)
+
+
 def _overlay_path(mt5, symbol):
     """<MT5 common data>/Files/fxbot_<symbol>.txt, read by the FxbotOverlay indicator."""
     info = mt5.terminal_info()
@@ -292,6 +323,7 @@ def run(cfg, pair="EURUSD", dry_run=False, allow_live=False):
                     log.warning("overlay write failed: %s", e)
 
             _draw()
+            last_status = _log_status_changes(morning, _london_local(datetime.now(timezone.utc))[1], {})
             consecutive_failures = 0
 
             while True:
@@ -303,6 +335,7 @@ def run(cfg, pair="EURUSD", dry_run=False, allow_live=False):
                     log.warning("No bars from MT5, retrying next bar")
                     continue
                 new = bars[bars.index > last_ts] if last_ts is not None else bars
+                had_pos = broker.position() is not None
                 live_spread = broker.current_spread_pips()
                 fx = getattr(real_broker, "quote_to_account", None)
                 if fx is not None:
@@ -322,6 +355,10 @@ def run(cfg, pair="EURUSD", dry_run=False, allow_live=False):
                              bar.Index.astimezone(LONDON).strftime("%H:%M"), bar.spread_pips,
                              "open" if broker.position() is not None else "none",
                              broker.equity())
+                if had_pos and broker.position() is None:
+                    _log_closed_trade(broker)
+                lmin_now = _london_local(datetime.now(timezone.utc))[1]
+                last_status = _log_status_changes(morning, lmin_now, last_status)
                 _draw()
 
         except KeyboardInterrupt:
