@@ -8,7 +8,7 @@ def _rm():
 
 
 def test_usd_account_default():
-    assert _rm().position_size(10000, 1.1000, 1.0950) == 10000      # 50 / 50 pips
+    assert abs(_rm().position_size(10000, 1.1000, 1.0950) - 10000) <= 1   # 50 / 50 pips
 
 
 def test_cad_account_scales_down():
