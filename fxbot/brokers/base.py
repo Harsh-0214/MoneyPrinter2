@@ -33,6 +33,7 @@ class Position:
     risk_per_unit: float      # distance entry -> stop, in price
     entry_commission: float = 0.0
     tag: str = ""
+    swap: float = 0.0         # overnight financing accumulated so far (negative = paid)
 
 
 @dataclass
@@ -48,6 +49,7 @@ class Trade:
     r_multiple: float         # pnl / amount risked
     exit_reason: str
     tag: str = ""
+    swap: float = 0.0         # overnight financing included in pnl
 
 
 class Broker(ABC):

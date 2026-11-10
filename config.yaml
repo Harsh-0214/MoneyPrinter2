@@ -18,6 +18,8 @@ costs:
   use_data_spread: true       # if the file has a spread column, use it when it's wider
   rollover_spread_pips: 3.0   # spread around the 5pm New York rollover (it widens a lot)
   slippage_pips: 0.2          # extra cost on market and stop fills
+  swap_long_per_lot: -8.0     # overnight financing, USD per 100k per night (negative = paid)
+  swap_short_per_lot: -2.0    #   pessimistic EURUSD values; only multi-day trades pay it
   commission_per_lot_per_side: 0.0   # standard accounts: 0 (cost is in the spread)
                                      # raw/ECN accounts: often ~3.5 USD
 

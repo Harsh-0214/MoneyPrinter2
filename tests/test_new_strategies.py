@@ -2,6 +2,7 @@
 correctly, and lose on random data (no lookahead edge)."""
 import copy
 
+import pandas as pd
 import yaml
 
 from fxbot.backtest import run_backtest
@@ -23,6 +24,20 @@ def test_tiny_range_fade_runs_and_tags():
     assert len(t) > 0
     assert set(t.tag) <= {"fade_long", "fade_short"}
     assert eq.iloc[-1] < eq.iloc[0]          # random walk: costs win
+
+
+def test_trend_follow_holds_overnight_and_pays_swap():
+    cfg = yaml.safe_load(open("config.yaml"))
+    cfg["smt"] = {}
+    cfg["strategies"] = {"morning": [{"name": "trend_follow", "entry_days": 10,
+                                      "exit_days": 5, "atr_days": 5}], "afternoon": []}
+    bars = resample(generate_synthetic(days=300), "1h")
+    t, eq = run_backtest(bars, cfg)
+    assert len(t) > 0
+    assert set(t.tag) <= {"trend_long", "trend_short"}
+    held = (pd.to_datetime(t.exit_time) - pd.to_datetime(t.entry_time)).dt.days
+    assert held.max() >= 1                     # multi-day holds happen
+    assert (t.swap <= 0).all() and t.swap.sum() < 0   # pessimistic swap is charged
 
 
 def test_london_close_reversal_both_directions():

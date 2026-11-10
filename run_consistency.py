@@ -37,11 +37,30 @@ GRIDS = {
         "target_rr": [1.5, None],
         "near_extreme_pips": [None, 10],
     },
+    "trend_donchian": {
+        "entry_days": [20, 40, 55, 100],
+        "exit_days": [None, 10, 20],
+        "stop_atr": [2.0, 3.0, 4.0],
+    },
+    "trend_turtle": {
+        "entry_days": [20, 40, 55, 100],
+        "exit_days": [10, 20, 40],
+        "stop_atr": [2.0, 4.0, 6.0],
+    },
+    "trend_ema": {
+        "ema_fast": [20, 50],
+        "ema_slow": [100, 200],
+        "stop_atr": [2.0, 3.0, 4.0],
+    },
 }
 SLOT = {"tiny_range_fade": "morning", "london_close_reversal": "afternoon",
-        "london_close_follow": "afternoon"}
+        "london_close_follow": "afternoon", "trend_donchian": "morning", "trend_ema": "morning", "trend_turtle": "morning"}
+TIMEFRAME = {"trend_donchian": "1h", "trend_ema": "1h", "trend_turtle": "1h"}   # default: the cached 5min bars
 # grid name -> (strategy name, fixed params)
-ALIAS = {"london_close_follow": ("london_close_reversal", {"direction": "follow"})}
+ALIAS = {"london_close_follow": ("london_close_reversal", {"direction": "follow"}),
+         "trend_donchian": ("trend_follow", {"signal": "donchian"}),
+         "trend_ema": ("trend_follow", {"signal": "ema", "exit_days": None}),
+         "trend_turtle": ("trend_follow", {"signal": "donchian", "trail": False})}
 
 _BARS = None
 _CFG = None
@@ -63,7 +82,12 @@ def _one(args):
     real, fixed = ALIAS.get(name, (name, {}))
     c["strategies"][SLOT[name]] = [dict(name=real, **fixed, **params)]
     out = []
+    tf = TIMEFRAME.get(name)
     for sym, bars in _BARS.items():
+        if tf:
+            from fxbot.data import resample
+            cols = [x for x in ("open", "high", "low", "close", "data_spread_pips") if x in bars]
+            bars = resample(bars[cols], tf)
         t, _ = run_backtest(bars, c)
         if len(t) == 0:
             continue
@@ -79,10 +103,13 @@ def main():
     ap.add_argument("strategy", choices=list(GRIDS))
     ap.add_argument("--spread", type=float, default=None)
     ap.add_argument("--workers", type=int, default=4)
+    ap.add_argument("--no-swap", action="store_true", help="zero overnight financing")
     args = ap.parse_args()
     cfg = yaml.safe_load(open("config.yaml"))
     if args.spread:
         cfg["costs"]["spread_pips"] = args.spread
+    if args.no_swap:
+        cfg["costs"]["swap_long_per_lot"] = cfg["costs"]["swap_short_per_lot"] = 0.0
     grid = GRIDS[args.strategy]
     keys = list(grid)
     jobs = [(args.strategy, dict(zip(keys, v))) for v in itertools.product(*grid.values())]
@@ -108,6 +135,11 @@ def main():
         "trades": df.groupby(keys).n.sum(),
     })
     summ["avgR"] = (summ.total_R / summ.trades).round(3)
+    if "EURUSD" in py.columns.get_level_values(0):
+        eur = py["EURUSD"]
+        summ["eur_pos_yrs"] = (eur > 0).sum(axis=1)
+        summ["eur_R"] = eur.sum(axis=1).round(1)
+        summ["eur_R_23_24"] = eur[[c for c in eur.columns if c in (2023, 2024)]].sum(axis=1).round(1)
     summ = summ.sort_values(["pos_pair_years", "worst_R"], ascending=False)
     pd.set_option("display.width", 220)
     print(summ.head(25).to_string())

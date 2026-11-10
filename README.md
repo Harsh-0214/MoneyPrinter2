@@ -60,6 +60,15 @@ pair-years). Target: profitable in every pair-year.
 | London-close reversal (fade a 30–80 pip London move at 15:00–16:30) | 96 | 4 / 10 | −0.15 to −0.25 | loses in every variation |
 | London-close continuation (trade *with* that move) | 192 | 7 / 10 (and net negative) | ≈ −0.05 | rejected |
 
+| Daily trend following, EURUSD (Donchian 20–100 day breakout, ATR stops; trailing and turtle-style exits; EMA 20/50 × 100/200 crossover) | 84 | EURUSD: 4 of 5 years at best, still net ≈ 0 R | −0.3 to +0.08 | no edge, even with zero swap: rejected |
+
+Trend following was judged on EURUSD (GBPUSD shown only as a cross-check).
+It paid ~0.1–0.4 R per trade in overnight swap at −8/−2 USD per lot per night.
+With swap set to zero it was still ≈ breakeven, and it also lost in 2023–2024,
+so it doesn't hedge the stack's bad years. Multi-day holds and swap are now
+supported by the simulator (`costs.swap_long_per_lot` / `swap_short_per_lot`,
+triple on Wednesday) for future tests.
+
 Fading and following the afternoon move both lose. The London afternoon
 behaves like a random walk where costs decide the result. The code is kept
 (`tiny_range_fade.py`, `london_close_reversal.py`) for future experiments
@@ -120,7 +129,7 @@ python -m venv venv
 venv\Scripts\activate
 pip install -r requirements.txt
 copy .env.example .env          # fill in MT5 login, password, server, terminal path
-python -m pytest -q             # 35 tests
+python -m pytest -q             # 40 tests
 python run_backtest.py --synthetic   # random data: should lose ~the spread
 ```
 
@@ -137,7 +146,7 @@ Pairs must be USD-quoted (XXX/USD). The simulator books PnL in the quote currenc
 ```
 python run_validate.py            # walk-forward + per-year + robustness grid (~10 min)
 python run_validate.py --only walk
-python run_consistency.py tiny_range_fade   # per-year grid for one strategy (also london_close_reversal / london_close_follow)
+python run_consistency.py tiny_range_fade   # per-year grid for one strategy (also london_close_reversal, london_close_follow, trend_donchian, trend_turtle, trend_ema; --no-swap, --spread)
 python run_backtest.py            # single-pair run, writes results/trades.csv, equity.png
 ```
 `run_validate.py` caches resampled bars in `data/cache/`, so reruns are fast.
@@ -167,12 +176,13 @@ fxbot/
   backtest.py            engine, route_morning(), metrics, multi-pair
   data.py  risk.py
   brokers/  sim_broker.py  mt5_broker.py  base.py
-  strategies/  london_sweep.py  london_breakout.py  (+ tiny_range_fade, london_close_reversal, ny_breakout, prev_day, mean_reversion: tested, unused)
-tests/                   35 unit tests
+  strategies/  london_sweep.py  london_breakout.py  (+ trend_follow, tiny_range_fade, london_close_reversal, ny_breakout, prev_day, mean_reversion: tested, unused)
+tests/                   40 unit tests
 ```
 
 ## Simulator assumptions (deliberately pessimistic)
 - Signals fill at the next bar's open. Buys pay the ask. The spread widens to 3 pips at NY rollover.
 - Stops fill with slippage, or at the open if price gaps through.
 - If the stop and target are both hit in the same bar, the stop counts.
-- Not modelled: overnight swap (none needed, everything closes the same day) and news spikes.
+- Overnight swap is charged at the 17:00 New York rollover (triple on Wednesday). The intraday stack never pays it.
+- News spikes are not modelled.

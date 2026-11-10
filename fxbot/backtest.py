@@ -11,9 +11,10 @@ from .data import PIP, filter_dates, load_csv, resample
 from .risk import RiskManager
 from .strategies import (LondonBreakout, LondonCloseReversal, LondonSweep,
                           MeanReversion, NYOpenBreakout, PrevDayBreakout,
-                          TinyRangeFade)
+                          TinyRangeFade, TrendFollow)
 
 STRATEGY_MAP = {
+    "trend_follow":     TrendFollow,
     "tiny_range_fade":  TinyRangeFade,
     "london_close_reversal": LondonCloseReversal,
     "london_breakout":  LondonBreakout,
@@ -142,7 +143,8 @@ def run_backtest(df, cfg, strategy_cls=None):
     local_mins = (local.hour * 60 + local.minute).to_numpy()
 
     broker = SimBroker(cfg["account"]["starting_equity"], c_cfg["slippage_pips"],
-                       c_cfg["commission_per_lot_per_side"], PIP)
+                       c_cfg["commission_per_lot_per_side"], PIP,
+                       c_cfg.get("swap_long_per_lot", 0.0), c_cfg.get("swap_short_per_lot", 0.0))
     risk = RiskManager(cfg["risk"], PIP)
 
     equity = np.empty(len(df))

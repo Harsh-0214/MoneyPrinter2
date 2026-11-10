@@ -28,8 +28,15 @@ def compute_spread_pips(df, costs):
 
 
 class SimBroker(Broker):
-    def __init__(self, starting_equity, slippage_pips=0.0, commission_per_lot_per_side=0.0, pip=PIP):
+    def __init__(self, starting_equity, slippage_pips=0.0, commission_per_lot_per_side=0.0, pip=PIP,
+                 swap_long_per_lot=0.0, swap_short_per_lot=0.0):
         self.balance = float(starting_equity)
+        # Overnight financing, USD per 100k units per night (negative = you pay).
+        # Charged when a position is held through the 17:00 New York rollover;
+        # the Wednesday rollover counts 3 nights (weekend), like real brokers.
+        self.swap_long = float(swap_long_per_lot) / LOT
+        self.swap_short = float(swap_short_per_lot) / LOT
+        self._roll_key = None
         self.pip = pip
         self.slip = slippage_pips * pip
         self.comm_per_unit = commission_per_lot_per_side / LOT
@@ -74,6 +81,10 @@ class SimBroker(Broker):
         bid_o, bid_h, bid_l = bar.open, bar.high, bar.low
         ask_o, ask_h, ask_l = bid_o + spread, bid_h + spread, bid_l + spread
 
+        # 0) overnight swap: did a 17:00 New York rollover pass since the last bar?
+        if self.swap_long or self.swap_short:
+            self._apply_swap(t)
+
         # 1) close requested on the previous bar -> fill at this open
         if self._pending_close and self._pos is not None:
             px = bid_o - self.slip if self._pos.side == 1 else ask_o + self.slip
@@ -90,6 +101,8 @@ class SimBroker(Broker):
                 self.balance -= comm
                 self._pos = Position(o.side, o.units, entry, t, o.stop_loss, o.take_profit,
                                      risk, comm, o.tag)
+                if self.swap_long or self.swap_short:
+                    self._roll_key = self._roll_day(t)
         self._pending_order = None
 
         # 3) stop loss / take profit inside this bar
@@ -116,6 +129,31 @@ class SimBroker(Broker):
             self._exit(self._bar.Index, self._exit_price_at_close(), "end_of_data")
 
     # ---------------- helpers ----------------
+    @staticmethod
+    def _roll_day(t):
+        """Rollover 'day' a timestamp belongs to (changes at 17:00 New York)."""
+        return (t.tz_convert("America/New_York") - pd.Timedelta(hours=17)).date()
+
+    def _apply_swap(self, t):
+        """Charge financing for every 17:00 New York rollover crossed since the last bar.
+        Only does work while a position is open (keeps intraday backtests fast)."""
+        if self._pos is None:
+            return
+        key = self._roll_day(t)
+        if self._roll_key is not None and key != self._roll_key:
+            nights = 0
+            d = self._roll_key
+            one = pd.Timedelta(days=1).to_pytimedelta()
+            while d < key:
+                d = d + one          # rollover at 17:00 NY on date d
+                wd = d.weekday()
+                nights += 3 if wd == 2 else (0 if wd >= 5 else 1)
+            rate = self.swap_long if self._pos.side == 1 else self.swap_short
+            amt = rate * self._pos.units * nights
+            self.balance += amt
+            self._pos.swap += amt
+        self._roll_key = key
+
     def _exit_price_at_close(self):
         bid_c = self._bar.close
         return bid_c if self._pos.side == 1 else bid_c + self._bar.spread_pips * self.pip
@@ -130,8 +168,8 @@ class SimBroker(Broker):
         comm = p.units * self.comm_per_unit
         self.balance += gross - comm
         total_comm = comm + p.entry_commission
-        net = gross - total_comm
+        net = gross - total_comm + p.swap          # swap already booked to balance nightly
         r = net / (p.risk_per_unit * p.units)
         self.trades.append(Trade(p.side, p.units, p.entry_time, p.entry_price, t, px,
-                                 net, total_comm, r, reason, p.tag))
+                                 net, total_comm, r, reason, p.tag, p.swap))
         self._pos = None

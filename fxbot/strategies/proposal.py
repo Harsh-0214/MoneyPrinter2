@@ -26,6 +26,7 @@ TAG_PREFIXES = {
     "london_breakout": ("long_break", "short_break"),
     "tiny_range_fade": ("fade_",),
     "london_close_reversal": ("lcr_",),
+    "trend_follow":    ("trend_",),
 }
 _ALL = tuple(p for ps in TAG_PREFIXES.values() for p in ps)
 
