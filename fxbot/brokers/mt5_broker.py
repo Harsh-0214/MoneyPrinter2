@@ -18,6 +18,7 @@ except ImportError:
     mt5 = None
 
 from .base import LOT, Broker, Order, Position, Trade
+from ..data import server_ts_to_utc
 
 PIP = 0.0001  # EUR/USD
 
@@ -39,12 +40,15 @@ class MT5Broker(Broker):
         )
         self._logger = logger
 
-        login = int(os.environ["MT5_LOGIN"])
-        password = os.environ["MT5_PASSWORD"]
-        server = os.environ["MT5_SERVER"]
         path = os.environ.get("MT5_TERMINAL_PATH")
-
-        init_kwargs: dict = dict(login=login, password=password, server=server)
+        if os.environ.get("MT5_LOGIN"):
+            init_kwargs: dict = dict(login=int(os.environ["MT5_LOGIN"]),
+                                     password=os.environ["MT5_PASSWORD"],
+                                     server=os.environ["MT5_SERVER"])
+        else:
+            # No credentials in .env: attach to the terminal's logged-in account
+            logger.info("MT5_LOGIN not set - attaching to the running terminal's account")
+            init_kwargs = {}
         if path:
             init_kwargs["path"] = path
 
@@ -79,18 +83,14 @@ class MT5Broker(Broker):
         return mt5.account_info().equity
 
     def position(self) -> Optional[Position]:
-        positions = mt5.positions_get(symbol=self._symbol)
-        if not positions:
-            return None
-        for p in positions:
-            if p.magic != self._magic:
-                continue
+        for p in self._my_positions():
             side = 1 if p.type == mt5.ORDER_TYPE_BUY else -1
             return Position(
                 side=side,
                 units=round(p.volume * LOT),
                 entry_price=p.price_open,
-                entry_time=pd.Timestamp(p.time, unit="s", tz="UTC"),
+                # MT5 position times are server time encoded as epoch -> real UTC
+                entry_time=server_ts_to_utc([p.time])[0],
                 stop_loss=p.sl,
                 take_profit=p.tp if p.tp != 0.0 else None,
                 risk_per_unit=abs(p.price_open - p.sl),
@@ -167,14 +167,20 @@ class MT5Broker(Broker):
             self._logger.error("close_position: symbol %s not found", self._symbol)
             return
 
+        ticket = self._my_ticket()
+        if ticket is None:
+            return
         close_type = mt5.ORDER_TYPE_SELL if pos.side == 1 else mt5.ORDER_TYPE_BUY
         tick = mt5.symbol_info_tick(self._symbol)
         price = tick.bid if pos.side == 1 else tick.ask
         lots = self._to_lots(pos.units, info)
 
+        # "position": ticket is REQUIRED on hedging accounts (FOREX.com demo is
+        # one) - without it the opposite deal opens a new hedge position.
         request = {
             "action": mt5.TRADE_ACTION_DEAL,
             "symbol": self._symbol,
+            "position": ticket,
             "volume": lots,
             "type": close_type,
             "price": price,
@@ -203,12 +209,7 @@ class MT5Broker(Broker):
         pos = self.position()
         if pos is None:
             return
-        positions = mt5.positions_get(symbol=self._symbol)
-        ticket = None
-        for p in (positions or []):
-            if p.magic == self._magic:
-                ticket = p.ticket
-                break
+        ticket = self._my_ticket()
         if ticket is None:
             return
         request = {
@@ -295,6 +296,17 @@ class MT5Broker(Broker):
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    def _my_positions(self):
+        """This bot's open positions on this symbol, oldest first."""
+        ps = [p for p in (mt5.positions_get(symbol=self._symbol) or []) if p.magic == self._magic]
+        return sorted(ps, key=lambda p: p.time_msc)
+
+    def _my_ticket(self):
+        ps = self._my_positions()
+        if len(ps) > 1:
+            self._logger.error("%d positions open for magic %d - expected 1", len(ps), self._magic)
+        return ps[0].ticket if ps else None
 
     def _to_lots(self, units: int, symbol_info) -> float:
         """Convert integer units to a valid lot size for this symbol."""

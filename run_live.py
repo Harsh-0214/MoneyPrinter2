@@ -81,6 +81,33 @@ class DryRunBroker:
         return self._b.trades
 
 
+class CappedEquityBroker:
+    """Make the bot size and risk-check as if the account were `cap` dollars.
+
+    Reported equity = cap + (real equity - real equity at start), so 0.5% risk
+    means 0.5% of ~cap, and the daily-loss kill switch works on the same base.
+    """
+
+    def __init__(self, broker, cap):
+        self._b = broker
+        self._cap = float(cap)
+        self._start = broker.equity()
+
+    def equity(self):
+        return self._cap + (self._b.equity() - self._start)
+
+    def position(self): return self._b.position()
+    def current_spread_pips(self): return self._b.current_spread_pips()
+    def submit(self, order): return self._b.submit(order)
+    def close_position(self, reason="manual"): return self._b.close_position(reason)
+    def update_stop(self, new_stop_price): return self._b.update_stop(new_stop_price)
+    def shutdown(self): return self._b.shutdown()
+
+    @property
+    def trades(self):
+        return self._b.trades
+
+
 class _NoOrderBroker:
     """Used while replaying today's bars at startup: state only, no orders."""
 
@@ -205,6 +232,10 @@ def run(cfg, pair="EURUSD", dry_run=False, allow_live=False):
         try:
             real_broker = MT5Broker(cfg, log, allow_live=allow_live)
             broker = DryRunBroker(real_broker) if dry_run else real_broker
+            cap = cfg["live"].get("equity_cap")
+            if cap:
+                broker = CappedEquityBroker(broker, cap)
+                log.info("Sizing as if equity = %.0f (live.equity_cap)", cap)
             for s in [symbol] + ([smt_symbol] if smt_symbol else []):
                 mt5.symbol_select(s, True)
 

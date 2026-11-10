@@ -181,4 +181,5 @@ live:
   symbol_suffix: "."         # FOREX.com Canada uses a trailing dot (EURUSD., GBPUSD.)
   server_tz: "Europe/Helsinki"  # broker server timezone (MT5 uses this for bar timestamps)
   magic: 12345               # base magic; each pair uses magic + its index in pairs:
+  equity_cap: 5000           # size trades as if the account were this big (null = use real equity)
   allow_live: false          # must be true AND --allow-live flag set to run on a real account
