@@ -30,23 +30,20 @@ risk:
   news_blackout_minutes: 30   # no new entries this many minutes either side of news
 
 # ---------------------------------------------------------------
-#  Optimized strategy: London ICT Sweep only
+#  Multi-strategy morning stack with scored proposal routing
 #
-#  Backtest results (2021-2025, 5-year, EURUSD 5-min bars):
-#    Total return : +7.51%   Max drawdown: -2.53%
-#    Win rate     : 51.2%    Profit factor: 1.80
-#    Trades       : 41       (~8 per year, Wed-Fri only)
+#  How routing works:
+#    - Each strategy evaluates setup quality and returns a scored proposal.
+#    - The highest-scoring proposal on each bar is executed.
+#    - LondonSweep (score 100-130) always beats LondonBreakout (score 60-80).
+#    - LondonBreakout.propose() defers until defer_until (10:30) so the
+#      Sweep has a full 2.5h window to form first.  Only if no Sweep fires
+#      by 10:30 does the Breakout get a chance to propose.
+#    - The Breakout also acts as a false-breakout filter: at defer_until it
+#      checks price is STILL beyond the range (reversals are skipped).
 #
-#  Tested and REJECTED additional strategies:
-#    London Breakout fallback  — adds trades but reduces total return
-#                                (+6.96% combined vs +7.51% sweep alone),
-#                                raises drawdown to -8.46%, 3/5 years negative
-#    NY Open Breakout          — loses money in ALL tested configurations
-#                                (best was -8.55%, worst -37% over 5 years)
-#
-#  Trade frequency: ~8 trades/year by design. The strategy is highly selective,
-#  which is why it maintains 51% win rate and <3% drawdown. Quantity bots that
-#  trade 5× daily use scalping/grid/martingale — lower win rates, higher risk.
+#  NY Open Breakout tested on 5 years — loses money in every configuration.
+#  Dropped permanently.
 # ---------------------------------------------------------------
 strategies:
   morning:
@@ -74,6 +71,24 @@ strategies:
       skip_days: [0, 1]          # skip Mon+Tue — both are losing days historically
       smt_filter: false          # SMT raises win% (64%) but cuts trade count too far (14 trades)
       smt_min_pips: 1.0
+
+    - name: london_breakout      # fallback: fires only after sweep window closes (10:30)
+      range_start: "00:00"
+      range_end: "08:00"
+      entry_cutoff: "11:00"
+      session_exit: "16:00"
+      max_trades_per_day: 1
+      min_range_pips: 25         # tight range = stronger consolidation
+      max_range_pips: 80
+      buffer_pips: 0.5
+      reward_risk: 2.0
+      stop_mode: range
+      atr_period: 14
+      atr_stop_mult: 1.5
+      ema_filter: false
+      skip_days: [0, 1]
+      defer_until: "10:30"       # wait for sweep window to close before proposing
+
   afternoon: []                  # NY Open tested and dropped — loses on all configs
 
 # Legacy single-strategy block (used by tests and direct run_backtest calls)

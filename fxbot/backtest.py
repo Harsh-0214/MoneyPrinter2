@@ -111,37 +111,58 @@ def run_backtest(df, cfg, strategy_cls=None):
     risk = RiskManager(cfg["risk"], PIP)
 
     equity = np.empty(len(df))
-    prev_day      = None
-    morning_fired = None   # day on which the morning slot was used
-    afternoon_fired = None # day on which the afternoon slot was used
+    prev_day        = None
+    morning_fired   = None   # day on which the morning slot was used
+    afternoon_fired = None   # day on which the afternoon slot was used
 
     for i, bar in enumerate(df.itertuples()):
         broker.on_bar(bar)
-        day = local_days[i]
+        day  = local_days[i]
         lmin = local_mins[i]
         if day != prev_day:
             risk.new_day(broker.equity())
             prev_day = day
 
-        n_before = len(broker.trades)
-
-        # Morning strategies: priority order, first to fire blocks the rest for the day
-        if morning_fired != day:
-            for strat in morning:
-                strat.on_bar(bar, day, lmin, broker, risk)
-                if len(broker.trades) > n_before:
-                    morning_fired = day
+        # --- Morning strategies: scored-proposal selection ---
+        # propose() is ALWAYS called (not gated on morning_fired) so that each
+        # strategy's internal session-exit check runs every bar.  Only the
+        # submission of the resulting order is gated on morning_fired.
+        morning_proposals = []
+        for strat in morning:
+            if hasattr(strat, "propose"):
+                p = strat.propose(bar, day, lmin, broker, risk)
+                # propose() handles session exit internally; collect proposals
+                # only for days where the morning slot hasn't fired yet.
+                if p is not None and morning_fired != day:
+                    morning_proposals.append((strat, p))
+            else:
+                # Legacy strategy: call on_bar() only before morning fires
+                if morning_fired != day:
                     n_before = len(broker.trades)
-                    break  # morning slot taken — skip remaining morning strategies
+                    strat.on_bar(bar, day, lmin, broker, risk)
+                    if len(broker.trades) > n_before:
+                        morning_fired = day
 
-        # Afternoon strategies: independent session, runs regardless of morning
-        if afternoon_fired != day:
-            for strat in afternoon:
-                strat.on_bar(bar, day, lmin, broker, risk)
-                if len(broker.trades) > n_before:
-                    afternoon_fired = day
+        if morning_proposals and morning_fired != day:
+            best_strat, best_prop = max(morning_proposals, key=lambda x: x[1].score)
+            if broker.submit(best_prop.order):
+                best_strat.mark_fired()
+                morning_fired = day
+
+        # --- Afternoon strategies: independent session ---
+        for strat in afternoon:
+            if hasattr(strat, "propose"):
+                p = strat.propose(bar, day, lmin, broker, risk)
+                if p is not None and afternoon_fired != day:
+                    if broker.submit(p.order):
+                        strat.mark_fired()
+                        afternoon_fired = day
+            else:
+                if afternoon_fired != day:
                     n_before = len(broker.trades)
-                    break
+                    strat.on_bar(bar, day, lmin, broker, risk)
+                    if len(broker.trades) > n_before:
+                        afternoon_fired = day
 
         equity[i] = broker.equity()
 

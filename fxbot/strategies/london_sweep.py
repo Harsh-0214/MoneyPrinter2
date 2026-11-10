@@ -13,10 +13,23 @@ Lookahead rule
 --------------
 A swing low at bar i is only confirmed once bar i+swing_k has closed.
 The strategy never peeks at future bars.
+
+Scoring (propose() / multi-strategy mode)
+------------------------------------------
+Score = 100 base
+  + 20  if SMT divergence confirmed (EUR swept but GBP did NOT)
+  + 10  if Asian range is tight (< 15 pips)
+  +  5  if Asian range is moderate (15-25 pips)
+Minimum: 100  Maximum: ~130
+
+Always higher than LondonBreakout (60-80), so the Sweep wins whenever
+both strategies have a valid setup on the same bar.
 """
 from datetime import time
+from typing import Optional
 
 from ..brokers.base import Order
+from .proposal import TradeProposal
 
 
 def _minutes(hhmm):
@@ -47,12 +60,8 @@ class LondonSweep:
         self.min_rr       = cfg.get("min_rr",                    1.5)
         self.max_trades   = cfg.get("max_trades_per_day",          1)
         self.ema_filter   = cfg.get("ema_filter",               False)
-        # daily_ema is the EMA of daily closes (computed in backtest.py via resample+shift)
-        # skip_days: set of weekday ints to skip (0=Mon … 4=Fri); empty = trade every day
         raw_skip = cfg.get("skip_days", [])
         self._skip_days   = set(int(d) for d in raw_skip)
-        # SMT divergence filter: only enter when the confirmation pair did NOT also sweep
-        # smt_high / smt_low columns are merged onto bars by backtest.py
         self.smt_filter   = cfg.get("smt_filter",              False)
         self.smt_min      = cfg.get("smt_min_pips",             1.0) * pip
 
@@ -67,50 +76,34 @@ class LondonSweep:
         self.day      = day
         self.asian_hi = float("-inf")
         self.asian_lo = float("inf")
-
-        # All bars seen today (bar namedtuples from itertuples)
-        self._bars = []
-
-        # Confirmed swing points today:  list of (bar_index, price)
-        self._sw_lows  = []   # (idx_of_low_bar, low_price)
-        self._sw_highs = []   # (idx_of_high_bar, high_price)
-
-        # High-sweep state
+        self._bars    = []
+        self._sw_lows  = []
+        self._sw_highs = []
         self.high_swept  = False
         self.high_failed = False
         self.ext_hi      = float("-inf")
-        self.ext_hi_idx  = None   # bar index (into self._bars) of sweep extreme
-
-        # Low-sweep state
+        self.ext_hi_idx  = None
         self.low_swept   = False
         self.low_failed  = False
         self.ext_lo      = float("inf")
         self.ext_lo_idx  = None
-
         self.trades_today = 0
-
-        # SMT pair tracking (GBPUSD when filtering EURUSD)
-        self.smt_asian_hi   = float("-inf")
-        self.smt_asian_lo   = float("inf")
-        self.smt_hi_swept   = False   # True if SMT pair also swept its Asian high
-        self.smt_lo_swept   = False   # True if SMT pair also swept its Asian low
+        self.smt_asian_hi = float("-inf")
+        self.smt_asian_lo = float("inf")
+        self.smt_hi_swept = False
+        self.smt_lo_swept = False
 
     # ------------------------------------------------------------------ #
     #  Swing detection (no lookahead)                                     #
     # ------------------------------------------------------------------ #
 
     def _try_confirm_swing(self, candidate_idx):
-        """
-        Called when we have just seen bar candidate_idx + swing_k.
-        At that point we have exactly swing_k bars on each side of candidate.
-        """
         k    = self.swing_k
         bars = self._bars
-        # We need bars[candidate_idx - k .. candidate_idx + k] to all exist
         if candidate_idx < k:
             return
         if candidate_idx + k >= len(bars):
-            return   # shouldn't happen if called correctly, but guard anyway
+            return
 
         lo = bars[candidate_idx].low
         hi = bars[candidate_idx].high
@@ -131,17 +124,12 @@ class LondonSweep:
         if is_sw_high:
             self._sw_highs.append((candidate_idx, hi))
 
-    # ------------------------------------------------------------------ #
-    #  Helpers: "most recent confirmed swing before the extreme bar"      #
-    # ------------------------------------------------------------------ #
-
     def _last_sw_low_before(self, before_bar_idx):
-        """Most recent confirmed swing low whose bar index < before_bar_idx."""
         result = None
         for idx, lo in self._sw_lows:
             if idx < before_bar_idx:
                 result = (idx, lo)
-        return result   # None if no such swing low exists
+        return result
 
     def _last_sw_high_before(self, before_bar_idx):
         result = None
@@ -151,48 +139,34 @@ class LondonSweep:
         return result
 
     # ------------------------------------------------------------------ #
-    #  Main loop entry point                                              #
+    #  State update (pure — no broker side-effects)                       #
     # ------------------------------------------------------------------ #
 
-    def on_bar(self, bar, local_day, local_min, broker, risk):
+    def _update_state(self, bar, local_day, local_min):
         if local_day != self.day:
             self._reset_day(local_day)
-            # Skip entire day if it falls in skip_days (0=Mon … 4=Fri)
             if self._skip_days:
                 dow = int(local_day.astype("datetime64[D]").astype(object).weekday())
                 if dow in self._skip_days:
-                    self.trades_today = self.max_trades  # block entry for the day
+                    self.trades_today = self.max_trades
 
-        # --- append bar and confirm any new swing point ---
         self._bars.append(bar)
         bar_idx = len(self._bars) - 1
         candidate = bar_idx - self.swing_k
         if candidate >= 0:
             self._try_confirm_swing(candidate)
 
-        # --- build Asian range (EUR and SMT pair) ---
         if self.range_start <= local_min < self.range_end:
             self.asian_hi = max(self.asian_hi, bar.high)
             self.asian_lo = min(self.asian_lo, bar.low)
             if self.smt_filter:
                 sh = getattr(bar, "smt_high", float("nan"))
                 sl = getattr(bar, "smt_low",  float("nan"))
-                if sh == sh:  # not NaN
+                if sh == sh:
                     self.smt_asian_hi = max(self.smt_asian_hi, sh)
                 if sl == sl:
                     self.smt_asian_lo = min(self.smt_asian_lo, sl)
 
-        # --- session exit (always check even after entry_cutoff) ---
-        if broker.position() is not None:
-            if local_min >= self.session_exit:
-                broker.close_position("session_exit")
-            return
-
-        # No valid Asian range yet
-        if self.asian_hi == float("-inf"):
-            return
-
-        # --- track sweeps during sweep window (EUR and SMT pair) ---
         if self.smt_filter and self.sweep_start <= local_min < self.sweep_end:
             sh = getattr(bar, "smt_high", float("nan"))
             sl = getattr(bar, "smt_low",  float("nan"))
@@ -224,44 +198,131 @@ class LondonSweep:
                         self.ext_lo     = bar.low
                         self.ext_lo_idx = bar_idx
 
-        # --- look for BOS entry ---
-        if self.trades_today >= self.max_trades:
-            return
-        if local_min >= self.entry_cutoff:
-            return
-        if local_min < self.range_end:
-            return
+    # ------------------------------------------------------------------ #
+    #  Setup quality score                                                 #
+    # ------------------------------------------------------------------ #
 
-        # Daily trend filter: use yesterday's daily-close EMA, not intrabar EMA.
-        # daily_ema column is populated by backtest.py (resample to 1D, shift(1), ffill).
+    def _compute_score(self, side: int) -> float:
+        """Score this sweep setup.  Always >= 100; always beats Breakout (60-80)."""
+        score = 100.0
+
+        # SMT divergence: EUR swept its range but GBP did NOT → genuine stop hunt
+        if self.smt_filter:
+            smt_data_ok = self.smt_asian_hi != float("-inf")
+            if smt_data_ok:
+                if side == -1 and not self.smt_hi_swept:
+                    score += 20
+                elif side == 1 and not self.smt_lo_swept:
+                    score += 20
+
+        # Tight Asian range → more precise key levels
+        range_pips = (self.asian_hi - self.asian_lo) / self.pip
+        if range_pips < 15:
+            score += 10
+        elif range_pips < 25:
+            score += 5
+
+        return score
+
+    # ------------------------------------------------------------------ #
+    #  Order construction (read-only on broker/risk)                      #
+    # ------------------------------------------------------------------ #
+
+    def _build_short_order(self, bar, broker, risk) -> Optional[Order]:
+        spread_px = bar.spread_pips * self.pip
+        entry_est = bar.close
+        stop      = self.ext_hi + self.stop_buf + spread_px
+        stop_dist = stop - entry_est
+        if stop_dist <= 0 or stop_dist > self.max_stop_px:
+            return None
+
+        target = self.asian_lo if self.target_mode == "opposite_range" \
+            else entry_est - self.rr * stop_dist
+        rr_actual = (entry_est - target) / stop_dist if stop_dist > 0 else 0
+        if rr_actual < self.min_rr:
+            return None
+
+        equity = broker.equity()
+        if not risk.can_trade(equity, bar.Index):
+            return None
+        units = risk.position_size(equity, entry_est, stop, broker.current_spread_pips())
+        if units <= 0:
+            return None
+        return Order(-1, units, stop, target, "sweep_short")
+
+    def _build_long_order(self, bar, broker, risk) -> Optional[Order]:
+        spread_px = bar.spread_pips * self.pip
+        entry_est = bar.close + spread_px
+        stop      = self.ext_lo - self.stop_buf
+        stop_dist = entry_est - stop
+        if stop_dist <= 0 or stop_dist > self.max_stop_px:
+            return None
+
+        target = self.asian_hi if self.target_mode == "opposite_range" \
+            else entry_est + self.rr * stop_dist
+        rr_actual = (target - entry_est) / stop_dist if stop_dist > 0 else 0
+        if rr_actual < self.min_rr:
+            return None
+
+        equity = broker.equity()
+        if not risk.can_trade(equity, bar.Index):
+            return None
+        units = risk.position_size(equity, entry_est, stop, broker.current_spread_pips())
+        if units <= 0:
+            return None
+        return Order(1, units, stop, target, "sweep_long")
+
+    # ------------------------------------------------------------------ #
+    #  Proposal (multi-strategy mode — no broker.submit)                  #
+    # ------------------------------------------------------------------ #
+
+    def propose(self, bar, local_day, local_min, broker, risk) -> Optional[TradeProposal]:
+        """Update state and return a scored TradeProposal if a valid BOS entry
+        exists on this bar.  Does NOT call broker.submit().
+
+        In multi-strategy mode the backtest engine collects proposals from all
+        morning strategies and executes the highest-scoring one.
+        """
+        self._update_state(bar, local_day, local_min)
+
+        # Session exit is handled here even in propose() so positions close on time
+        if broker.position() is not None:
+            if local_min >= self.session_exit:
+                broker.close_position("session_exit")
+            return None
+
+        if self.asian_hi == float("-inf"):
+            return None
+        if self.trades_today >= self.max_trades:
+            return None
+        if local_min >= self.entry_cutoff or local_min < self.range_end:
+            return None
+
         daily_ema = getattr(bar, "daily_ema", float("nan"))
         ema_ok_short = (not self.ema_filter) or (daily_ema == daily_ema and bar.close < daily_ema)
         ema_ok_long  = (not self.ema_filter) or (daily_ema == daily_ema and bar.close > daily_ema)
 
-        # SMT divergence filter:
-        #   Short valid when EUR swept its high BUT GBP did NOT also sweep its high.
-        #   Long  valid when EUR swept its low  BUT GBP did NOT also sweep its low.
-        #   Both pairs sweeping the same side = real breakout, not a stop hunt → skip.
-        #   Falls through (allows trade) when SMT data is unavailable for the day.
         smt_data_ok  = (not self.smt_filter) or (self.smt_asian_hi != float("-inf"))
         smt_ok_short = (not self.smt_filter) or (not smt_data_ok) or (not self.smt_hi_swept)
         smt_ok_long  = (not self.smt_filter) or (not smt_data_ok) or (not self.smt_lo_swept)
 
-        # Short setup (high was swept)
-        if ema_ok_short and smt_ok_short and self.high_swept and not self.high_failed and self.ext_hi_idx is not None:
+        bar_idx = len(self._bars) - 1
+
+        if ema_ok_short and smt_ok_short and self.high_swept and not self.high_failed \
+                and self.ext_hi_idx is not None:
             if bar_idx - self.ext_hi_idx <= self.max_bars_bos:
                 sw = self._last_sw_low_before(self.ext_hi_idx)
                 if sw is not None:
                     _, sw_lo = sw
                     if bar.close < sw_lo - self.bos_buf:
-                        # BOS confirmed — check close-inside-range filter
                         close_ok = (not self.req_inside) or (bar.close < self.asian_hi)
                         if close_ok:
-                            self._enter_short(bar, broker, risk)
-                            return
+                            order = self._build_short_order(bar, broker, risk)
+                            if order:
+                                return TradeProposal(order, self._compute_score(-1), "london_sweep")
 
-        # Long setup (low was swept)
-        if ema_ok_long and smt_ok_long and self.low_swept and not self.low_failed and self.ext_lo_idx is not None:
+        if ema_ok_long and smt_ok_long and self.low_swept and not self.low_failed \
+                and self.ext_lo_idx is not None:
             if bar_idx - self.ext_lo_idx <= self.max_bars_bos:
                 sw = self._last_sw_high_before(self.ext_lo_idx)
                 if sw is not None:
@@ -269,61 +330,21 @@ class LondonSweep:
                     if bar.close > sw_hi + self.bos_buf:
                         close_ok = (not self.req_inside) or (bar.close > self.asian_lo)
                         if close_ok:
-                            self._enter_long(bar, broker, risk)
-                            return
+                            order = self._build_long_order(bar, broker, risk)
+                            if order:
+                                return TradeProposal(order, self._compute_score(1), "london_sweep")
+
+        return None
+
+    def mark_fired(self):
+        """Called by the multi-strategy engine after submitting this proposal."""
+        self.trades_today += 1
 
     # ------------------------------------------------------------------ #
-    #  Order construction                                                 #
+    #  Single-strategy / test interface (backward-compatible)             #
     # ------------------------------------------------------------------ #
 
-    def _enter_short(self, bar, broker, risk):
-        spread_px = bar.spread_pips * self.pip
-        entry_est = bar.close                              # sell at bid (next bar)
-        stop      = self.ext_hi + self.stop_buf + spread_px
-        stop_dist = stop - entry_est
-        if stop_dist <= 0 or stop_dist > self.max_stop_px:
-            return
-
-        if self.target_mode == "opposite_range":
-            target = self.asian_lo
-        else:
-            target = entry_est - self.rr * stop_dist
-
-        rr_actual = (entry_est - target) / stop_dist if stop_dist > 0 else 0
-        if rr_actual < self.min_rr:
-            return
-
-        equity = broker.equity()
-        if not risk.can_trade(equity, bar.Index):
-            return
-        units = risk.position_size(equity, entry_est, stop, broker.current_spread_pips())
-        if units <= 0:
-            return
-        if broker.submit(Order(-1, units, stop, target, "sweep_short")):
-            self.trades_today += 1
-
-    def _enter_long(self, bar, broker, risk):
-        spread_px = bar.spread_pips * self.pip
-        entry_est = bar.close + spread_px                  # buy at ask (next bar)
-        stop      = self.ext_lo - self.stop_buf
-        stop_dist = entry_est - stop
-        if stop_dist <= 0 or stop_dist > self.max_stop_px:
-            return
-
-        if self.target_mode == "opposite_range":
-            target = self.asian_hi
-        else:
-            target = entry_est + self.rr * stop_dist
-
-        rr_actual = (target - entry_est) / stop_dist if stop_dist > 0 else 0
-        if rr_actual < self.min_rr:
-            return
-
-        equity = broker.equity()
-        if not risk.can_trade(equity, bar.Index):
-            return
-        units = risk.position_size(equity, entry_est, stop, broker.current_spread_pips())
-        if units <= 0:
-            return
-        if broker.submit(Order(1, units, stop, target, "sweep_long")):
+    def on_bar(self, bar, local_day, local_min, broker, risk):
+        p = self.propose(bar, local_day, local_min, broker, risk)
+        if p and broker.submit(p.order):
             self.trades_today += 1
