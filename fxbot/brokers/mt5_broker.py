@@ -227,6 +227,18 @@ class MT5Broker(Broker):
         else:
             self._logger.info("Stop moved to %.5f", new_stop_price)
 
+    def quote_to_account(self) -> float:
+        """Account-currency value of a 1.0 price move per 1 unit traded.
+
+        For a CAD account trading EURUSD this is ~USDCAD (~1.40). Uses MT5's own
+        tick value, so it is correct for any account currency.
+        """
+        info = mt5.symbol_info(self._symbol)
+        if info is None or not info.trade_tick_size or not info.trade_contract_size:
+            return 1.0
+        v = info.trade_tick_value / info.trade_tick_size / info.trade_contract_size
+        return v if v > 0 else 1.0
+
     def current_spread_pips(self) -> float:
         tick = mt5.symbol_info_tick(self._symbol)
         return (tick.ask - tick.bid) / PIP

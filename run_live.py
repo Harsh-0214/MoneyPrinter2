@@ -274,6 +274,10 @@ def run(cfg, pair="EURUSD", dry_run=False, allow_live=False):
             log.info("Startup replay: %d bars, last=%s, slot_used=%s, position=%s",
                      0 if bars is None else len(bars), last_ts,
                      fired_day is not None, broker.position() is not None)
+            risk.quote_to_account = real_broker.quote_to_account()
+            acct = mt5.account_info()
+            log.info("Account currency %s: 1 %s move per unit = %.4f %s (sizing uses this)",
+                     acct.currency, symbol[3:6], risk.quote_to_account, acct.currency)
             log.info("Bot started. equity=%.2f dry_run=%s", broker.equity(), dry_run)
             overlay_path = _overlay_path(mt5, symbol)
 
@@ -300,6 +304,9 @@ def run(cfg, pair="EURUSD", dry_run=False, allow_live=False):
                     continue
                 new = bars[bars.index > last_ts] if last_ts is not None else bars
                 live_spread = broker.current_spread_pips()
+                fx = getattr(real_broker, "quote_to_account", None)
+                if fx is not None:
+                    risk.quote_to_account = fx()
                 for k, bar in enumerate(new.itertuples()):
                     day, lmin = _london_local(bar.Index.to_pydatetime())
                     if day != cur_day:

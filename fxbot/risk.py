@@ -11,6 +11,10 @@ class RiskManager:
         self.min_units = int(cfg["min_units"])
         self.pip = pip
         self.day_start_equity = None
+        # Account-currency value of 1.0 price unit per 1 unit traded. 1.0 when the
+        # account currency is the quote currency (USD account, XXX/USD pair).
+        # The live runner sets this from MT5 each bar (e.g. ~1.40 for a CAD account).
+        self.quote_to_account = 1.0
         self.blackout_ns = int(cfg.get("news_blackout_minutes", 30)) * 60 * 10**9
         self.news = np.array([], dtype=np.int64)
         if cfg.get("news_file"):
@@ -44,6 +48,7 @@ class RiskManager:
         dist = abs(entry_price - stop_price) + spread_pips * self.pip
         if dist <= 0:
             return 0
-        units = equity * self.risk_pct / 100 / dist
-        units = min(units, equity * self.max_leverage / entry_price)   # leverage cap
+        fx = self.quote_to_account if self.quote_to_account > 0 else 1.0
+        units = equity * self.risk_pct / 100 / (dist * fx)
+        units = min(units, equity * self.max_leverage / (entry_price * fx))   # leverage cap
         return int(units // self.min_units * self.min_units)
