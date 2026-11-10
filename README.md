@@ -1,269 +1,178 @@
-# MoneyPrinter2 — EUR/USD London Session Trading Bot
+# MoneyPrinter2 — London Session FX Bot (EURUSD + GBPUSD)
 
-Automated trading bot for EUR/USD via MetaTrader 5 (FOREX.com demo, Canada).
-Runs two complementary strategies on the London open using 5-minute bars.
+Automated intraday trading bot for MetaTrader 5 (FOREX.com demo, Canada).
+It runs two strategies on the London open using 5-minute bars, on EURUSD and
+GBPUSD. Each pair uses the other one as its SMT confirmation feed.
 
-**5-year backtest results (2021–2025, EURUSD):**
-| Metric | Value |
-|---|---|
-| Total return | +8.70% |
-| Max drawdown | -5.64% |
-| Win rate | 48.8% |
-| Profit factor | 1.28 |
-| Trades | 203 (~40/year) |
+## Honest results (2021–2025, 0.5% risk per trade)
+
+Validated with `python run_validate.py`. Parameters were chosen on the full
+2021–2025 data, so the in-sample/out-of-sample split below is a sanity check,
+not a clean blind test.
+
+| Period | Pairs | Trades | Return | CAGR | Max DD | PF | Win % |
+|---|---|---|---|---|---|---|---|
+| 2021–2023 (in-sample) | EUR + GBP | 222 | +6.73% | 2.2%/yr | -6.93% | 1.18 | 47.7 |
+| 2024–2025 (out-of-sample) | EUR + GBP | 126 | +4.83% | 2.4%/yr | -5.98% | 1.27 | 46.8 |
+| 2021–2025 | EUR + GBP | 348 | +11.70% | 2.2%/yr | -10.58% | 1.21 | 47.4 |
+| 2021–2025 | EURUSD only | 134 | +6.68% | 1.3%/yr | -4.43% | 1.35 | 52.2 |
+| 2021–2025 | GBPUSD only | 214 | +5.02% | 1.0%/yr | -8.04% | 1.13 | 44.4 |
+
+**By year (combined):** 2021 +9.6% · 2022 +1.1% · 2023 −3.6% · 2024 −3.9% · 2025 +8.9%
+
+What this means:
+- The edge is real but small: about **+0.07 R per trade**, roughly 2%/yr at 0.5% risk.
+- Results are lumpy. Two strong years carry three flat or losing ones.
+- About 90% of trades are London Breakout trades. The Sweep fires only ~6 times a year.
+- **Scaling risk does not reach 10%/yr safely.** At 1% risk: ~4.3%/yr, −20% max DD.
+  At 2% risk: ~7.3%/yr, −33% max DD (Monte Carlo 95th percentile: −31%).
+
+### Robustness (one parameter changed at a time)
+| Check | In-sample | Out-of-sample | Verdict |
+|---|---|---|---|
+| Spread 1.0 → 1.5 → 2.0 pips | +6.7 → +5.8 → +3.4% | +4.8 → +3.5 → +3.1% | survives costs |
+| Slippage 0.2 → 0.5 pips | +6.7 → +6.0% | +4.8 → +3.9% | ok |
+| Sweep `swing_k` 1 / 2 / 3 | +3.3 / +6.7 / +8.5% | +4.8 / +4.8 / +5.0% | stable |
+| Sweep `min_rr` 1.25 / 1.5 / 2.0 | +5.5 / +6.7 / +6.3% | +2.5 / +4.8 / +5.4% | ok |
+| Breakout `reward_risk` 1.5 / 2 / 2.5 | +7.0 / +6.7 / +6.6% | +4.6 / +4.8 / +4.6% | stable (target rarely hit) |
+| **Breakout `min_range_pips` 20 / 25 / 30** | **+12.3 / +6.7 / 0.0%** | **+1.5 / +4.8 / +1.2%** | ⚠️ fragile |
+| Breakout `max_defer_extension_pips` 10 / 15 / off | +8.2 / +6.7 / +7.1% | +2.8 / +4.8 / +5.9% | the cap doesn't help out-of-sample |
+
+### Third pair test: AUDUSD (same parameters, no retuning)
+| | 2021–2023 | 2024–2025 | 2021–2025 | Max DD | PF |
+|---|---|---|---|---|---|
+| AUDUSD alone | +0.0% | +5.1% | +5.2% (1.0%/yr) | −6.0% | 1.16 |
+| AUDUSD alone, 1.5-pip spread | | | +1.1% | −6.3% | 1.03 |
+| EUR + GBP + AUD | +6.7% | +10.0% | +16.9% (3.2%/yr) | −13.4% | 1.19 |
+
+Verdict: **not enabled.** AUDUSD earned nothing in 2021–2023 and roughly breaks
+even at a realistic 1.5-pip spread. It also made the losing years worse
+(2023 −4.2%, 2024 −5.2% combined). It sits commented out in `config.yaml`
+under `pairs:`.
+
+### Extra strategies tested and rejected (Nov 2026, `run_consistency.py`)
+Each one was run alone on EURUSD and GBPUSD for every year 2021–2025 (10
+pair-years). Target: profitable in every pair-year.
+
+| Strategy | Variations tested | Best pair-years profitable | Typical R/trade | Verdict |
+|---|---|---|---|---|
+| Tiny-range fade (fade breaks of < 10–20 pip Asian ranges) | 48 | 5 / 10 | −0.05 to +0.16, ~23 trades/yr | inconsistent: rejected |
+| London-close reversal (fade a 30–80 pip London move at 15:00–16:30) | 96 | 4 / 10 | −0.15 to −0.25 | loses in every variation |
+| London-close continuation (trade *with* that move) | 192 | 7 / 10 (and net negative) | ≈ −0.05 | rejected |
+
+Fading and following the afternoon move both lose. The London afternoon
+behaves like a random walk where costs decide the result. The code is kept
+(`tiny_range_fade.py`, `london_close_reversal.py`) for future experiments
+but isn't in the live stack.
+
+⚠️ Most of the Breakout's profit comes from Asian ranges of **25–30 pips**
+(+0.12 R in-sample, +0.15 R out-of-sample, positive on both pairs). The 20–25
+and 30–35 pip buckets are about breakeven, and ranges under 15 pips lose in
+both periods. A sweet spot that narrow could be noise, so watch it in demo.
 
 ---
 
 ## How the bot decides what to trade
 
-Every morning the bot runs two strategies in parallel. Each one evaluates the
-current market conditions and scores its own setup quality. The highest-scoring
-proposal wins the morning trade slot. Only one trade is taken per session.
+Every bar, both morning strategies evaluate the market and score their own
+setup. The highest-scoring proposal takes the one trade slot per pair per day
+(`fxbot.backtest.route_morning`, which both the backtest and the live runner use).
 
-### Morning strategies (08:00–11:00 London time)
-
-#### 1. London Sweep — ICT stop hunt reversal (score 100–130)
-
-Looks for price to fake out the Asian range, then immediately reverse.
+### 1. London Sweep: stop-hunt reversal (score 100–130)
 
 ```
-00:00–08:00   Builds Asian range (overnight high and low)
-08:00–10:30   Watches for price to spike just past the range boundary
-              e.g. Asian high = 1.0520, price taps 1.0525  ← "sweep"
-              Then waits for a swing structure to break back through (BOS)
-              e.g. price closes below the last swing low before the spike
-              → Entry fires immediately on that bar
+00:00–08:00   Build the Asian range (London time)
+08:00–10:30   Price spikes 1–15 pips past a range edge ("sweep")
+              then closes back through the last swing point (Break of Structure)
+              → entry on the next bar
 ```
+- **Stop:** beyond the sweep extreme + 1 pip (max 25 pips)
+- **Target:** opposite side of the Asian range; skipped if R/R < 1.5
+- **SMT filter (hard):** EUR swept but GBP did not, or vice versa
+- **Breakeven:** stop moves to entry once the trade is +1R
+- **Days:** skips Monday and Tuesday
+- **Score:** 100 + 20 (SMT) + 10/5 (tight/moderate range)
 
-The idea: market makers briefly push price above/below the range to trigger
-retail stop losses, then reverse. The bot enters when the reversal is confirmed
-by a Break of Structure (BOS).
-
-**Stop loss:** placed just above the sweep extreme (the fake spike high/low).
-If price exceeds the sweep extreme, the setup is invalid.
-
-**Take profit:** opposite side of the Asian range. A stop hunt reversal
-typically runs all the way back to where it came from.
-
+### 2. London Breakout: deferred fallback (score 60–77)
 ```
-Example short trade:
-  Asian high    = 1.0520
-  Sweep extreme = 1.0525  (price tapped here, running stops)
-  BOS entry     = 1.0510  (price broke back below a swing low)
-
-  Stop loss     = 1.0526  (above sweep extreme + 1 pip buffer)
-  Take profit   = 1.0490  (opposite side of range)
-  Risk          = 16 pips
-  Reward        = 20 pips  → R/R = 1.25 ❌ (below minimum 1.5, skipped)
+08:00–10:30   Note a close beyond range ± 0.5 pip, but don't trade yet
+10:30–11:00   If price is STILL beyond the range (and < 15 pips extended) → enter
 ```
+- **Range filter:** Asian range 25–80 pips
+- **Stop:** opposite side of the Asian range (avg ~45 pips)
+- **Target:** 2R. In practice only ~5% of trades reach it; most close at the session exit.
+- **Breakeven:** stop moves to entry at +1R
+- **Days:** skips Monday and Tuesday
 
-**Scoring bonuses:**
-- +20 if SMT divergence confirmed (EUR swept but GBP did NOT — genuine stop hunt)
-- +10 if Asian range is tight (< 15 pips — precise levels)
-- +5  if Asian range is moderate (15–25 pips)
-
-**Day filter:** skips Monday and Tuesday — historically both are losing days
-for this strategy on EURUSD.
-
----
-
-#### 2. London Breakout — range breakout fallback (score 60–80)
-
-Looks for price to break cleanly through the Asian range and keep going.
-Only fires if the Sweep did not form by 10:30.
-
-```
-00:00–08:00   Builds same Asian range
-08:00–10:30   Silently watches — if price closes beyond range + 0.5 pips,
-              notes the direction but does NOT fire yet
-10:30         Checks: is price STILL beyond the range?
-              Yes → proposes entry now (confirmed breakout)
-              No  → skipped (false breakout — price reversed back inside)
-10:30–11:00   Entry window
-```
-
-The 10:30 delay serves two purposes: it gives the Sweep a full 2.5-hour
-window to form first, and it filters false breakouts that reversed.
-
-**Stop loss:** opposite side of the Asian range. A real breakout should
-not re-enter the range.
-
-**Take profit:** entry price + (2.0 × risk distance). Fixed 2:1 R/R.
-
-```
-Example long trade:
-  Asian low     = 1.0490
-  Asian high    = 1.0520
-  Break at 08:05, price reaches 1.0528
-  Still above range at 10:30 → entry confirmed
-
-  Entry         = 1.0528
-  Stop loss     = 1.0490  (opposite range wall)
-  Risk          = 38 pips
-  Take profit   = 1.0528 + (2.0 × 0.0038) = 1.0604
-```
-
-**Scoring bonuses:**
-- +12 if range < 20 pips (very tight consolidation)
-- +7  if range 20–25 pips
-- +3  if range 25–30 pips
-- +up to 5 based on breakout distance (momentum confirmation)
-
----
-
-### Why Sweep always beats Breakout
-
-The Sweep's minimum score (100) is always higher than the Breakout's
-maximum (~77). Additionally, the Breakout's `propose()` returns nothing
-before 10:30, so they cannot compete for the same bar in most cases.
-
-If both somehow propose on the same bar (at exactly 10:30): the Sweep's
-score wins. The Breakout only ever fires as a true fallback.
-
-```
-Day A: Sweep detects BOS at 09:30 → fires (score 105), Breakout silenced
-Day B: No sweep formed by 10:30  → Breakout fires if still valid (score 68)
-Day C: Breakout formed at 08:05 but reversed by 10:30 → neither fires
-```
-
----
+All positions close at **16:00 London** if still open.
 
 ### Position sizing
-
-Every trade risks exactly 0.5% of account equity, regardless of stop distance:
-
-```
-Units = (equity × 0.005) / (stop_distance_in_price × pip_value)
-```
-
-A wider stop = smaller position size. The dollar risk per trade is always
-the same. A 2% daily loss limit kills all trading for the rest of that day.
-
----
-
-### What max drawdown means
-
-Max drawdown (max DD) is the largest peak-to-trough drop in account equity
-during the backtest. If the account grew to $53,000 then fell to $50,000
-before recovering, that is a -5.66% drawdown.
-
-Our -5.64% means the account never dipped more than ~$2,820 below its
-recent high at any point across 5 years. For context, most professional
-strategies run -10% to -20% max DD.
+Each trade risks 0.5% of equity: `units = equity × 0.005 / stop distance`.
+A 2% daily loss stops new entries for the rest of the day.
 
 ---
 
 ## Setup from a fresh clone
-
-### 1. Clone the repo
 ```
 git clone https://github.com/Harsh-0214/MoneyPrinter2.git
 cd MoneyPrinter2
-```
-
-### 2. Install Python 3.10+
-Download from python.org — tick **"Add Python to PATH"** during install.
-
-### 3. Create a virtual environment and install dependencies
-```
 python -m venv venv
 venv\Scripts\activate
 pip install -r requirements.txt
+copy .env.example .env          # fill in MT5 login, password, server, terminal path
+python -m pytest -q             # 35 tests
+python run_backtest.py --synthetic   # random data: should lose ~the spread
 ```
 
-### 4. Add your MT5 credentials
-```
-copy .env.example .env
-```
-Open `.env` and fill in your FOREX.com demo account number, password, server
-name, and the path to your MT5 `terminal64.exe`. Never commit `.env` — it is
-gitignored.
+## Data
+- **histdata.com** (used for backtests): put the M1 CSVs in `data/histdata/`, then run
+  `python combine_histdata.py --symbol EURUSD` and `--symbol GBPUSD`.
+- **Dukascopy** (any USD-quoted pair):
+  `python download_dukascopy.py --instrument AUDUSD` → `data/AUDUSD_M1_duka.csv`
+- **MetaTrader 5:** `python fetch_mt5_data.py --start 2021-01-01 --end 2025-12-31`
 
-### 5. Verify everything works
-```
-python -m pytest -q
-python run_backtest.py --synthetic
-```
-The synthetic run uses random-walk data. It should lose a little (roughly
-the spread). If it ever profits on random data, there is a bug.
+Pairs must be USD-quoted (XXX/USD). The simulator books PnL in the quote currency.
 
----
+## Backtest & validation
+```
+python run_validate.py            # walk-forward + per-year + robustness grid (~10 min)
+python run_validate.py --only walk
+python run_consistency.py tiny_range_fade   # per-year grid for one strategy (also london_close_reversal / london_close_follow)
+python run_backtest.py            # single-pair run, writes results/trades.csv, equity.png
+```
+`run_validate.py` caches resampled bars in `data/cache/`, so reruns are fast.
 
-## Get real historical data
-
-**Option A — histdata.com (used for backtesting):**
-Download EUR/USD M1 bars, place CSVs in `data/histdata_eurusd/`, then:
+## Run live (demo)
 ```
-python combine_histdata.py --symbol EURUSD
-python combine_histdata.py --symbol GBPUSD   # needed for SMT filter
+python run_live.py --pair EURUSD --dry-run     # log only
+python run_live.py --pair EURUSD               # demo orders
+python run_live.py --pair GBPUSD               # second process for the second pair
 ```
-
-**Option B — from MetaTrader 5:**
-```
-python fetch_mt5_data.py --start 2021-01-01 --end 2025-12-31
-```
-
----
-
-## Run a backtest
-```
-python run_backtest.py
-```
-Results go to `results/`: `trades.csv`, `equity.csv`, `equity.png`.
-
-Honest testing — never tune on the test period:
-```
-python run_backtest.py --start 2021-01-01 --end 2023-12-31   # in-sample
-python run_backtest.py --start 2024-01-01 --end 2025-12-31   # out-of-sample
-```
-
----
-
-## Run live (demo only)
-```
-python run_live.py
-```
-Refuses to run on a live account unless `--allow-live` is explicitly passed
-AND `live.allow_live: true` is set in `config.yaml`.
-
----
+- Runs the same strategy stack and routing as the backtest, with the partner pair as the SMT feed.
+- Only closed 5-minute bars are used. Missed bars are caught up, and today's bars
+  are replayed on startup and after every reconnect.
+- Each pair gets its own magic number (`live.magic` + index in `pairs`).
+- A real-money account needs both `--allow-live` and `live.allow_live: true`.
 
 ## Project layout
 ```
-config.yaml                            all parameters
-.env.example                           MT5 credentials template (copy to .env)
-run_backtest.py                        backtest runner
-run_live.py                            live/demo runner
-combine_histdata.py                    merge histdata.com CSV files
+config.yaml              every parameter
+run_backtest.py          single-pair backtest
+run_validate.py          multi-pair walk-forward + robustness
+run_consistency.py       year-by-year grid for a single strategy
+run_live.py              live/demo runner (one process per pair)
+download_dukascopy.py    M1 data for any USD-quoted pair
+combine_histdata.py      merge histdata.com CSVs
 fxbot/
-  data.py                              loading, timezones, resampling
-  backtest.py                          scored-proposal engine + metrics
-  risk.py                              position sizing, daily kill switch
-  brokers/
-    base.py                            broker interface
-    sim_broker.py                      simulator (spread, slippage, gaps)
-    mt5_broker.py                      live MT5 broker
-  strategies/
-    proposal.py                        TradeProposal dataclass (score + order)
-    london_sweep.py                    ICT stop hunt reversal
-    london_breakout.py                 Asian range breakout fallback
-    ny_breakout.py                     NY open breakout (tested, not used)
-tests/                                 unit tests (27 total)
-data/                                  CSV price data (gitignored)
-results/                               backtest output (gitignored)
+  backtest.py            engine, route_morning(), metrics, multi-pair
+  data.py  risk.py
+  brokers/  sim_broker.py  mt5_broker.py  base.py
+  strategies/  london_sweep.py  london_breakout.py  (+ tiny_range_fade, london_close_reversal, ny_breakout, prev_day, mean_reversion: tested, unused)
+tests/                   35 unit tests
 ```
 
----
-
 ## Simulator assumptions (deliberately pessimistic)
-- Signals on a bar's close fill at the next bar's open.
-- Buys pay the ask (bid + spread); spread widens to 3 pips around NY rollover.
+- Signals fill at the next bar's open. Buys pay the ask. The spread widens to 3 pips at NY rollover.
 - Stops fill with slippage, or at the open if price gaps through.
-- If stop and target are both hit in one bar, the stop counts.
-
----
-
-## Warning signs in backtest results
-- Profit factor collapses out-of-sample.
-- Results flip when a parameter moves slightly (try `min_range` 20 vs 25 vs 30).
-- Profit disappears when `spread_pips` goes from 1.0 to 1.5.
+- If the stop and target are both hit in the same bar, the stop counts.
+- Not modelled: overnight swap (none needed, everything closes the same day) and news spikes.

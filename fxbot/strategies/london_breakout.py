@@ -37,7 +37,7 @@ from datetime import time
 from typing import Optional
 
 from ..brokers.base import Order
-from .proposal import TradeProposal
+from .proposal import TradeProposal, manages
 
 
 def _minutes(hhmm):
@@ -68,6 +68,8 @@ class LondonBreakout:
         # None = disabled (accept any extension).
         _ext = cfg.get("max_defer_extension_pips", None)
         self.max_defer_ext = _ext * pip if _ext is not None else None
+        # Move stop to entry once price is this many R ahead. 0 = disabled.
+        self.trail_be_rr  = float(cfg.get("trail_to_breakeven_rr", 0.0))
         self.day          = None
         self._reset_day(None)
 
@@ -134,11 +136,33 @@ class LondonBreakout:
     #  Order construction (read-only on broker/risk)                      #
     # ------------------------------------------------------------------ #
 
+    def _manage_open(self, bar, broker):
+        """Breakeven stop management for an open position."""
+        if self.trail_be_rr <= 0:
+            return
+        pos = broker.position()
+        if pos.risk_per_unit <= 0:      # MT5 reports 0 once stop == entry
+            return
+        profit_in_r = (bar.close - pos.entry_price) * pos.side / pos.risk_per_unit
+        if profit_in_r >= self.trail_be_rr:
+            new_stop = pos.entry_price
+            if (pos.side == 1 and new_stop > pos.stop_loss) or \
+               (pos.side == -1 and new_stop < pos.stop_loss):
+                broker.update_stop(new_stop)
+
+    def _stop_price(self, side, entry_est, bar, spread_px):
+        """Stop for a breakout: range wall, range midpoint, or ATR multiple."""
+        if self.stop_mode == "range":
+            return self.lo if side == 1 else self.hi + spread_px
+        if self.stop_mode == "mid":
+            mid = (self.hi + self.lo) / 2
+            return mid if side == 1 else mid + spread_px
+        return entry_est - side * self.atr_mult * bar.atr
+
     def _build_long_order(self, bar, broker, risk) -> Optional[Order]:
         spread_px = bar.spread_pips * self.pip
         entry_est = bar.close + spread_px
-        stop = self.lo if self.stop_mode == "range" \
-            else entry_est - self.atr_mult * bar.atr
+        stop = self._stop_price(1, entry_est, bar, spread_px)
         if stop != stop:
             return None
         dist = abs(entry_est - stop)
@@ -156,8 +180,7 @@ class LondonBreakout:
     def _build_short_order(self, bar, broker, risk) -> Optional[Order]:
         spread_px = bar.spread_pips * self.pip
         entry_est = bar.close
-        stop = self.hi + spread_px if self.stop_mode == "range" \
-            else entry_est + self.atr_mult * bar.atr
+        stop = self._stop_price(-1, entry_est, bar, spread_px)
         if stop != stop:
             return None
         dist = abs(entry_est - stop)
@@ -185,6 +208,10 @@ class LondonBreakout:
         self._update_state(bar, local_day, local_min)
 
         if broker.position() is not None:
+            # Leave the Sweep's positions to the Sweep (unknown tags still managed)
+            if not manages(broker.position(), "london_breakout"):
+                return None
+            self._manage_open(bar, broker)
             if local_min >= self.session_exit:
                 broker.close_position("session_exit")
             return None

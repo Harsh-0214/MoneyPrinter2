@@ -90,6 +90,8 @@ strategies:
       skip_days: [0, 1]
       defer_until: "10:30"       # wait for sweep window to close before proposing
       max_defer_extension_pips: 15  # skip if price ran >15 pips beyond range by 10:30
+      trail_to_breakeven_rr: 1.0 # stop -> entry at +1R. (Before the ownership fix the Sweep
+                                 # was silently doing this to Breakout trades; now explicit.)
 
   afternoon: []                  # NY Open tested and dropped — loses on all configs
 
@@ -160,11 +162,21 @@ pairs:
       source_tz: "UTC"
       timeframe: 5min
 
+  # AUDUSD tested Nov 2026 with unchanged params: 2021-23 +0.0%, 2024-25 +5.1%,
+  # breakeven at 1.5-pip spread. Adds ~1%/yr but raises max DD -10.6% -> -13.4%.
+  # Left disabled. Uncomment to include (no SMT partner -> SMT filter passes).
+  # - symbol: AUDUSD
+  #   data:
+  #     path: data/AUDUSD_M1_histdata.csv
+  #     source_tz: "UTC"
+  #     timeframe: 5min
+
 output:
   dir: results
 
 live:
-  symbol: "EURUSD."          # FOREX.com Canada uses a trailing dot
+  symbol: "EURUSD."          # default symbol; run_live.py --pair X uses X + symbol_suffix
+  symbol_suffix: "."         # FOREX.com Canada uses a trailing dot (EURUSD., GBPUSD.)
   server_tz: "Europe/Helsinki"  # broker server timezone (MT5 uses this for bar timestamps)
-  magic: 12345               # unique number so the bot only manages its own positions
+  magic: 12345               # base magic; each pair uses magic + its index in pairs:
   allow_live: false          # must be true AND --allow-live flag set to run on a real account

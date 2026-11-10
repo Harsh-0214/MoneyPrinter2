@@ -29,7 +29,7 @@ from datetime import time
 from typing import Optional
 
 from ..brokers.base import Order
-from .proposal import TradeProposal
+from .proposal import TradeProposal, manages
 
 
 def _minutes(hhmm):
@@ -290,9 +290,15 @@ class LondonSweep:
 
         # Session exit is handled here even in propose() so positions close on time
         if broker.position() is not None:
+            pos = broker.position()
+            # Only manage positions this strategy opened (another strategy may
+            # own the open position in multi-strategy mode). Unknown tags are
+            # still managed so a position is never left without a session exit.
+            if not manages(pos, "london_sweep"):
+                return None
             # Trailing stop: move stop to breakeven once price is 1R ahead
-            if self.trail_be_rr > 0:
-                pos = broker.position()
+            # (risk_per_unit is 0 on MT5 once the stop already sits at entry)
+            if self.trail_be_rr > 0 and pos.risk_per_unit > 0:
                 profit_in_r = (bar.close - pos.entry_price) * pos.side / pos.risk_per_unit
                 if profit_in_r >= self.trail_be_rr:
                     new_stop = pos.entry_price

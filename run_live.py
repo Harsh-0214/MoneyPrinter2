@@ -1,15 +1,22 @@
 """Live/demo runner.
 
-    python run_live.py                  # demo account (default)
-    python run_live.py --dry-run        # log actions without sending orders
-    python run_live.py --allow-live     # required to run on a real account
+    python run_live.py                       # demo account, EURUSD (default)
+    python run_live.py --pair GBPUSD         # trade another pair from cfg['pairs']
+    python run_live.py --dry-run             # log actions without sending orders
+    python run_live.py --allow-live          # required to run on a real account
+
+Runs the SAME morning stack and scored routing as the backtest
+(cfg['strategies']['morning'] + fxbot.backtest.route_morning), including the
+SMT feed from the pair's partner symbol. Run one process per pair; each pair
+gets its own magic number (live.magic + index in cfg['pairs']).
 
 Credentials are loaded from .env (see .env.example).
 """
 import argparse
 import logging
 import time
-from datetime import date, datetime, timezone
+import zoneinfo
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import yaml
@@ -17,8 +24,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+LONDON = zoneinfo.ZoneInfo("Europe/London")
 
-def _setup_logging():
+
+def _setup_logging(tag):
     Path("logs").mkdir(exist_ok=True)
     today = datetime.now().strftime("%Y%m%d")
     fmt = "%(asctime)s %(levelname)s %(message)s"
@@ -27,17 +36,17 @@ def _setup_logging():
         format=fmt,
         handlers=[
             logging.StreamHandler(),
-            logging.FileHandler(f"logs/live_{today}.log"),
+            logging.FileHandler(f"logs/live_{tag}_{today}.log"),
         ],
     )
     return logging.getLogger("fxbot")
 
 
-log = _setup_logging()
+log = logging.getLogger("fxbot")
 
 
 class DryRunBroker:
-    """Wraps MT5Broker and intercepts order submission for dry-run mode."""
+    """Wraps MT5Broker and intercepts every order-changing call."""
 
     def __init__(self, real_broker):
         self._b = real_broker
@@ -52,14 +61,17 @@ class DryRunBroker:
         return self._b.current_spread_pips()
 
     def submit(self, order):
-        log.info("DRY RUN: would submit %s %d units SL=%.5f TP=%s",
+        log.info("DRY RUN: would submit %s %d units SL=%.5f TP=%s tag=%s",
                  "BUY" if order.side == 1 else "SELL",
                  order.units, order.stop_loss,
-                 f"{order.take_profit:.5f}" if order.take_profit else "None")
+                 f"{order.take_profit:.5f}" if order.take_profit else "None", order.tag)
         return False
 
     def close_position(self, reason="manual"):
         log.info("DRY RUN: would close position reason=%s", reason)
+
+    def update_stop(self, new_stop_price):
+        log.info("DRY RUN: would move stop to %.5f", new_stop_price)
 
     def shutdown(self):
         self._b.shutdown()
@@ -69,226 +81,204 @@ class DryRunBroker:
         return self._b.trades
 
 
-def _next_bar_close(timeframe_minutes=5):
-    """Sleep until 30 seconds after the next 5-minute bar closes."""
-    now = datetime.now(timezone.utc)
-    seconds_since_epoch = now.timestamp()
-    bar_seconds = timeframe_minutes * 60
-    seconds_into_bar = seconds_since_epoch % bar_seconds
-    wait = bar_seconds - seconds_into_bar + 30
-    target = datetime.fromtimestamp(now.timestamp() + wait, tz=timezone.utc)
-    log.info("Waiting %.0fs for next bar close at %s", wait, target.strftime("%H:%M:%S"))
+class _NoOrderBroker:
+    """Used while replaying today's bars at startup: state only, no orders."""
+
+    def __init__(self, broker):
+        self._b = broker
+        self.trades = []
+
+    def equity(self): return self._b.equity()
+    def position(self): return self._b.position()
+    def current_spread_pips(self): return self._b.current_spread_pips()
+    def submit(self, order): return False
+    def close_position(self, reason=""): pass
+    def update_stop(self, new_stop_price): pass
+
+
+def _sleep_to_next_bar(timeframe_minutes=5):
+    """Sleep until 5 seconds after the next bar boundary."""
+    now = datetime.now(timezone.utc).timestamp()
+    bar_s = timeframe_minutes * 60
+    wait = bar_s - (now % bar_s) + 5
     time.sleep(wait)
 
 
 def _london_local(ts_utc):
-    """Return (date, minutes_since_midnight) in London time."""
-    import zoneinfo
-    london = zoneinfo.ZoneInfo("Europe/London")
-    local = ts_utc.astimezone(london)
-    return local.date(), local.hour * 60 + local.minute
+    """Return (numpy datetime64[D], minutes since midnight) in London time.
 
-
-def _replay_startup(broker, strategy, risk, cfg, pip):
-    """Replay today's closed bars to rebuild strategy state without placing orders."""
-    import MetaTrader5 as mt5
+    Same types the backtest passes to strategies.
+    """
     import numpy as np
+    local = ts_utc.astimezone(LONDON)
+    return np.datetime64(local.date(), "D"), local.hour * 60 + local.minute
+
+
+def _fetch_completed_bars(mt5, symbol, smt_symbol, cfg, start_utc):
+    """M1 bars since start_utc -> completed 5-min bars with spread + SMT columns.
+
+    The still-forming M1 bar and the still-forming 5-min bar are dropped, so a
+    strategy never sees a partial candle (the backtest only sees closed bars).
+    """
     import pandas as pd
+    from fxbot.brokers import compute_spread_pips
     from fxbot.data import resample, server_ts_to_utc
 
-    symbol = cfg["live"]["symbol"]
-    now_utc = datetime.now(timezone.utc)
-    today_start = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+    tf = cfg["data"]["timeframe"]
+    tf_delta = pd.Timedelta(tf)
 
-    rates = mt5.copy_rates_range(
-        symbol,
-        mt5.TIMEFRAME_M1,
-        today_start.replace(tzinfo=None),
-        now_utc.replace(tzinfo=None),
-    )
-    if rates is None or len(rates) == 0:
-        log.info("Startup replay: no bars yet today")
-        return
+    def _m1(sym):
+        # Pad the start: MT5 indexes by server time (UTC+2/+3)
+        rates = mt5.copy_rates_range(sym, mt5.TIMEFRAME_M1,
+                                     (start_utc - timedelta(hours=4)).replace(tzinfo=None),
+                                     (datetime.now(timezone.utc) + timedelta(hours=4)).replace(tzinfo=None))
+        if rates is None or len(rates) == 0:
+            return None
+        df = pd.DataFrame(rates)
+        df.index = server_ts_to_utc(df["time"].values)
+        df = df[df.index.notna()]
+        cols = ["open", "high", "low", "close"]
+        if "spread" in df.columns:
+            df["data_spread_pips"] = df["spread"] / 10.0
+            cols.append("data_spread_pips")
+        return df[cols].iloc[:-1]          # drop the forming M1 bar
 
-    df = pd.DataFrame(rates)
-    df.index = server_ts_to_utc(df["time"].values)
-    df = df.drop(columns=["time"])
-    df = df.rename(columns={"tick_volume": "volume"})
-    if "spread" in df.columns:
-        df["data_spread_pips"] = df["spread"] / 10.0
+    m1 = _m1(symbol)
+    if m1 is None or len(m1) == 0:
+        return None
+    bars = resample(m1, tf)
+    now = pd.Timestamp.now(tz="UTC")
+    bars = bars[bars.index + tf_delta <= now]          # completed bars only
+    bars = bars[bars.index >= pd.Timestamp(start_utc)]
+    bars["spread_pips"] = compute_spread_pips(bars, cfg["costs"])
 
-    bars = resample(df[["open", "high", "low", "close"] +
-                        (["data_spread_pips"] if "data_spread_pips" in df.columns else [])],
-                    cfg["data"]["timeframe"])
-
-    atr_period = cfg["strategy"].get("atr_period", 14)
-    tr = pd.concat([
-        bars["high"] - bars["low"],
-        (bars["high"] - bars["close"].shift()).abs(),
-        (bars["low"] - bars["close"].shift()).abs(),
-    ], axis=1).max(axis=1)
-    bars["atr"] = tr.ewm(span=atr_period, adjust=False).mean()
-    if "data_spread_pips" not in bars.columns:
-        bars["data_spread_pips"] = cfg["costs"]["spread_pips"]
-    bars["spread_pips"] = bars["data_spread_pips"]
-
-    # Wrap broker so no real orders go out during replay
-    class _NoOrderBroker:
-        def equity(self): return broker.equity()
-        def position(self): return broker.position()
-        def current_spread_pips(self): return broker.current_spread_pips()
-        def submit(self, order): return False
-        def close_position(self, reason=""): pass
-
-    replay_broker = _NoOrderBroker()
-    equity = broker.equity()
-    risk.new_day(equity)
-
-    for ts, bar in bars.iterrows():
-        local_day, local_min = _london_local(ts)
-        strategy.on_bar(bar, local_day, local_min, replay_broker, risk)
-
-    hi = strategy.hi if strategy.hi != float("-inf") else float("nan")
-    lo = strategy.lo if strategy.lo != float("inf") else float("nan")
-    log.info(
-        "Startup replay: %d bars, range hi=%.5f lo=%.5f, trades_today=%d, open_position=%s",
-        len(bars), hi, lo, strategy.trades_today,
-        "yes" if broker.position() is not None else "no",
-    )
+    if smt_symbol:
+        s1 = _m1(smt_symbol)
+        if s1 is not None and len(s1):
+            sb = resample(s1, tf)[["high", "low"]].reindex(bars.index)
+            bars["smt_high"] = sb["high"]
+            bars["smt_low"] = sb["low"]
+    return bars
 
 
-def _session_summary(broker, start_equity, log):
-    trades = broker.trades
-    equity = broker.equity()
-    pnl = equity - start_equity
-    log.info(
-        "Session summary: trades=%d pnl=%.2f equity=%.2f",
-        len(trades), pnl, equity,
-    )
-
-
-def run(cfg, dry_run=False, allow_live=False):
+def _build_morning(cfg):
     from fxbot.backtest import STRATEGY_MAP
-    from fxbot.brokers.mt5_broker import MT5Broker
-    from fxbot.data import PIP, resample
-    from fxbot.risk import RiskManager
-    import pandas as pd
+    from fxbot.data import PIP
+    if "strategies" in cfg:
+        return [STRATEGY_MAP[s["name"]](s, PIP) for s in cfg["strategies"]["morning"]]
+    s = cfg["strategy"]
+    return [STRATEGY_MAP[s.get("name", "london_breakout")](s, PIP)]
 
-    pip = PIP
-    s_name = cfg["strategy"].get("name", "london_breakout")
-    strategy_cls = STRATEGY_MAP.get(s_name)
-    if strategy_cls is None:
-        raise ValueError(f"Unknown strategy '{s_name}'. Options: {list(STRATEGY_MAP)}")
-    strategy = strategy_cls(cfg["strategy"], pip)
-    risk = RiskManager(cfg["risk"], pip)
+
+def _resolve_pair(cfg, pair_name):
+    """Return (broker_symbol, smt_broker_symbol, magic) for the chosen pair."""
+    live = cfg["live"]
+    suffix = live.get("symbol_suffix", ".")
+    pairs = cfg.get("pairs") or [{"symbol": "EURUSD"}]
+    names = [p["symbol"] for p in pairs]
+    if pair_name not in names:
+        raise SystemExit(f"--pair {pair_name} not in config pairs {names}")
+    idx = names.index(pair_name)
+    pair = pairs[idx]
+    smt_path = (pair.get("smt") or {}).get("path", "")
+    smt_name = next((n for n in names if n != pair_name and n in smt_path), None)
+    return (pair_name + suffix,
+            (smt_name + suffix) if smt_name else None,
+            int(live["magic"]) + idx)
+
+
+def run(cfg, pair="EURUSD", dry_run=False, allow_live=False):
+    import MetaTrader5 as mt5
+    from fxbot.backtest import route_morning
+    from fxbot.brokers.mt5_broker import MT5Broker
+    from fxbot.data import PIP
+    from fxbot.risk import RiskManager
+
+    symbol, smt_symbol, magic = _resolve_pair(cfg, pair)
+    cfg = dict(cfg)
+    cfg["live"] = dict(cfg["live"], symbol=symbol, magic=magic)
+    log.info("Pair %s -> symbol=%s smt=%s magic=%d", pair, symbol, smt_symbol, magic)
 
     consecutive_failures = 0
-    current_day = None
-    day_start_equity = None
-    session_summary_logged = False
-
     while True:
+        broker = None
         try:
             real_broker = MT5Broker(cfg, log, allow_live=allow_live)
             broker = DryRunBroker(real_broker) if dry_run else real_broker
+            for s in [symbol] + ([smt_symbol] if smt_symbol else []):
+                mt5.symbol_select(s, True)
 
-            _replay_startup(broker, strategy, risk, cfg, pip)
-
-            equity = broker.equity()
-            current_day = date.today()
-            day_start_equity = equity
-            risk.new_day(equity)
+            # Fresh strategy objects every (re)connect, then replay today's
+            # closed bars so ranges / sweeps / trades_today are rebuilt.
+            morning = _build_morning(cfg)
+            risk = RiskManager(cfg["risk"], PIP)
+            now_local = datetime.now(timezone.utc).astimezone(LONDON)
+            day_start_utc = now_local.replace(hour=0, minute=0, second=0,
+                                              microsecond=0).astimezone(timezone.utc)
+            bars = _fetch_completed_bars(mt5, symbol, smt_symbol, cfg, day_start_utc)
+            replay = _NoOrderBroker(broker)
+            risk.new_day(broker.equity())
+            fired_day, cur_day, last_ts = None, None, None
+            if bars is not None:
+                for bar in bars.itertuples():
+                    day, lmin = _london_local(bar.Index.to_pydatetime())
+                    cur_day = day
+                    fired_day = route_morning(morning, bar, day, lmin, replay, risk, fired_day)
+                    last_ts = bar.Index
+            # A position already open from today means the morning slot is used
+            if broker.position() is not None and cur_day is not None:
+                fired_day = cur_day
+                for s in morning:
+                    s.mark_fired()
+            log.info("Startup replay: %d bars, last=%s, slot_used=%s, position=%s",
+                     0 if bars is None else len(bars), last_ts,
+                     fired_day is not None, broker.position() is not None)
+            log.info("Bot started. equity=%.2f dry_run=%s", broker.equity(), dry_run)
             consecutive_failures = 0
-            session_summary_logged = False
-
-            log.info("Bot started. equity=%.2f dry_run=%s", equity, dry_run)
-
-            import MetaTrader5 as mt5
-            from fxbot.data import server_ts_to_utc as _sts_to_utc
 
             while True:
-                _next_bar_close()
-
-                symbol = cfg["live"]["symbol"]
-                rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M1, 0, 300)
-                if rates is None:
-                    log.warning("Failed to fetch bars from MT5, retrying next bar")
+                _sleep_to_next_bar()
+                since = (last_ts.to_pydatetime() if last_ts is not None else day_start_utc)
+                bars = _fetch_completed_bars(mt5, symbol, smt_symbol, cfg,
+                                             since - timedelta(minutes=10))
+                if bars is None or len(bars) == 0:
+                    log.warning("No bars from MT5, retrying next bar")
                     continue
-
-                df = pd.DataFrame(rates)
-                df.index = _sts_to_utc(df["time"].values)
-                df = df.drop(columns=["time"])
-                if "spread" in df.columns:
-                    df["data_spread_pips"] = df["spread"] / 10.0
-
-                bars = resample(
-                    df[["open", "high", "low", "close"] +
-                       (["data_spread_pips"] if "data_spread_pips" in df.columns else [])],
-                    cfg["data"]["timeframe"],
-                )
-                if len(bars) == 0:
-                    log.warning("Resample returned 0 bars, skipping")
-                    continue
-
-                atr_period = cfg["strategy"].get("atr_period", 14)
-                tr = pd.concat([
-                    bars["high"] - bars["low"],
-                    (bars["high"] - bars["close"].shift()).abs(),
-                    (bars["low"] - bars["close"].shift()).abs(),
-                ], axis=1).max(axis=1)
-                bars["atr"] = tr.ewm(span=atr_period, adjust=False).mean()
-
-                spread = broker.current_spread_pips()
-                if "data_spread_pips" not in bars.columns:
-                    bars["data_spread_pips"] = cfg["costs"]["spread_pips"]
-                bars["spread_pips"] = bars["data_spread_pips"]
-                bars.loc[bars.index[-1], "spread_pips"] = spread
-
-                bar = bars.iloc[-1]
-                ts = bar.name
-                local_day, local_min = _london_local(ts)
-
-                today_utc = datetime.now(timezone.utc).date()
-                if today_utc != current_day:
-                    current_day = today_utc
-                    equity = broker.equity()
-                    day_start_equity = equity
-                    risk.new_day(equity)
-                    session_summary_logged = False
-                    log.info("New trading day. equity=%.2f", equity)
-
-                equity = broker.equity()
-                log.info(
-                    "Bar %s spread=%.1fpip position=%s equity=%.2f",
-                    ts.strftime("%H:%M"),
-                    spread,
-                    "open" if broker.position() is not None else "none",
-                    equity,
-                )
-
-                # Session exit summary (once per day)
-                session_exit_min = strategy.session_exit
-                if local_min >= session_exit_min and not session_summary_logged:
-                    _session_summary(broker, day_start_equity, log)
-                    session_summary_logged = True
-
-                strategy.on_bar(bar, local_day, local_min, broker, risk)
+                new = bars[bars.index > last_ts] if last_ts is not None else bars
+                live_spread = broker.current_spread_pips()
+                for k, bar in enumerate(new.itertuples()):
+                    day, lmin = _london_local(bar.Index.to_pydatetime())
+                    if day != cur_day:
+                        cur_day = day
+                        risk.new_day(broker.equity())
+                        log.info("New London day %s equity=%.2f", day, broker.equity())
+                    if k == len(new) - 1:
+                        # Size the newest bar's order on the actual live spread
+                        bar = bar._replace(spread_pips=max(bar.spread_pips, live_spread))
+                    fired_day = route_morning(morning, bar, day, lmin, broker, risk, fired_day)
+                    last_ts = bar.Index
+                    log.info("Bar %s spread=%.1fpip position=%s equity=%.2f",
+                             bar.Index.astimezone(LONDON).strftime("%H:%M"), bar.spread_pips,
+                             "open" if broker.position() is not None else "none",
+                             broker.equity())
 
         except KeyboardInterrupt:
             log.info("Bot stopped cleanly.")
-            try:
-                broker.shutdown()
-            except Exception:
-                pass
+            if broker is not None:
+                try:
+                    broker.shutdown()
+                except Exception:
+                    pass
             break
 
         except Exception as exc:
             consecutive_failures += 1
             log.error("Error (failure %d/5): %s", consecutive_failures, exc, exc_info=True)
-            try:
-                broker.shutdown()
-            except Exception:
-                pass
+            if broker is not None:
+                try:
+                    broker.shutdown()
+                except Exception:
+                    pass
             if consecutive_failures >= 5:
                 log.error("5 consecutive failures — exiting.")
                 break
@@ -299,12 +289,17 @@ def run(cfg, dry_run=False, allow_live=False):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default="config.yaml")
+    ap.add_argument("--pair", default="EURUSD")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--allow-live", action="store_true")
     args = ap.parse_args()
 
+    global log
+    log = _setup_logging(args.pair)
     cfg = yaml.safe_load(open(args.config))
-    run(cfg, dry_run=args.dry_run, allow_live=args.allow_live)
+    if args.allow_live and not cfg["live"].get("allow_live", False):
+        raise SystemExit("--allow-live also requires live.allow_live: true in config.yaml")
+    run(cfg, pair=args.pair, dry_run=args.dry_run, allow_live=args.allow_live)
 
 
 if __name__ == "__main__":

@@ -9,10 +9,13 @@ import pandas as pd
 from .brokers import SimBroker, compute_spread_pips
 from .data import PIP, filter_dates, load_csv, resample
 from .risk import RiskManager
-from .strategies import (LondonBreakout, LondonSweep, MeanReversion,
-                          NYOpenBreakout, PrevDayBreakout)
+from .strategies import (LondonBreakout, LondonCloseReversal, LondonSweep,
+                          MeanReversion, NYOpenBreakout, PrevDayBreakout,
+                          TinyRangeFade)
 
 STRATEGY_MAP = {
+    "tiny_range_fade":  TinyRangeFade,
+    "london_close_reversal": LondonCloseReversal,
     "london_breakout":  LondonBreakout,
     "london_sweep":     LondonSweep,
     "ny_breakout":      NYOpenBreakout,
@@ -80,6 +83,33 @@ def _build_strategies(cfg):
     return morning, afternoon
 
 
+def route_morning(morning, bar, day, lmin, broker, risk, fired_day):
+    """One bar of scored-proposal routing for the morning slot.
+
+    Shared by the backtest and the live runner so both trade identically.
+    Returns the (possibly updated) day on which the morning slot was used.
+    """
+    proposals = []
+    for strat in morning:
+        if hasattr(strat, "propose"):
+            # propose() is ALWAYS called so each strategy's state and
+            # session-exit logic run every bar; only submission is gated.
+            p = strat.propose(bar, day, lmin, broker, risk)
+            if p is not None and fired_day != day:
+                proposals.append((strat, p))
+        elif fired_day != day:
+            n_before = len(broker.trades)
+            strat.on_bar(bar, day, lmin, broker, risk)
+            if len(broker.trades) > n_before:
+                fired_day = day
+    if proposals and fired_day != day:
+        best_strat, best_prop = max(proposals, key=lambda x: x[1].score)
+        if broker.submit(best_prop.order):
+            best_strat.mark_fired()
+            fired_day = day
+    return fired_day
+
+
 def run_backtest(df, cfg, strategy_cls=None):
     # Allow caller to pass a single class directly (used by tests and grid scripts)
     if strategy_cls is not None:
@@ -89,8 +119,11 @@ def run_backtest(df, cfg, strategy_cls=None):
         ref_cfg   = single_cfg
     else:
         morning, afternoon = _build_strategies(cfg)
-        ref_cfg = cfg.get("strategy", (cfg["strategies"]["morning"][0]
-                                       if "strategies" in cfg else {}))
+        ref_cfg = cfg.get("strategy")
+        if ref_cfg is None:
+            specs = (cfg.get("strategies", {}).get("morning", []) +
+                     cfg.get("strategies", {}).get("afternoon", []))
+            ref_cfg = specs[0] if specs else {}
 
     c_cfg = cfg["costs"]
     df = df.copy()
@@ -126,30 +159,7 @@ def run_backtest(df, cfg, strategy_cls=None):
             prev_day = day
 
         # --- Morning strategies: scored-proposal selection ---
-        # propose() is ALWAYS called (not gated on morning_fired) so that each
-        # strategy's internal session-exit check runs every bar.  Only the
-        # submission of the resulting order is gated on morning_fired.
-        morning_proposals = []
-        for strat in morning:
-            if hasattr(strat, "propose"):
-                p = strat.propose(bar, day, lmin, broker, risk)
-                # propose() handles session exit internally; collect proposals
-                # only for days where the morning slot hasn't fired yet.
-                if p is not None and morning_fired != day:
-                    morning_proposals.append((strat, p))
-            else:
-                # Legacy strategy: call on_bar() only before morning fires
-                if morning_fired != day:
-                    n_before = len(broker.trades)
-                    strat.on_bar(bar, day, lmin, broker, risk)
-                    if len(broker.trades) > n_before:
-                        morning_fired = day
-
-        if morning_proposals and morning_fired != day:
-            best_strat, best_prop = max(morning_proposals, key=lambda x: x[1].score)
-            if broker.submit(best_prop.order):
-                best_strat.mark_fired()
-                morning_fired = day
+        morning_fired = route_morning(morning, bar, day, lmin, broker, risk, morning_fired)
 
         # --- Afternoon strategies: independent session ---
         for strat in afternoon:

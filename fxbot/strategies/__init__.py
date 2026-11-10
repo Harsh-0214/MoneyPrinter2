@@ -4,3 +4,5 @@ from .ny_breakout import NYOpenBreakout
 from .prev_day_breakout import PrevDayBreakout
 from .mean_reversion import MeanReversion
 from .proposal import TradeProposal
+from .tiny_range_fade import TinyRangeFade
+from .london_close_reversal import LondonCloseReversal

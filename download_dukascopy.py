@@ -1,4 +1,4 @@
-"""Download EUR/USD 1-minute BID candles directly from Dukascopy's data server.
+﻿"""Download EUR/USD 1-minute BID candles directly from Dukascopy's data server.
 
 No account needed. Downloads the same data as their website, but automated.
 
@@ -73,9 +73,9 @@ def _parse_bi5(raw_bytes, day_date):
     return pd.DataFrame(rows)
 
 
-def _download_day(session, day_date, retries=3):
+def _download_day(session, day_date, instrument=INSTRUMENT, retries=3):
     url = URL.format(
-        instrument=INSTRUMENT,
+        instrument=instrument,
         year=day_date.year,
         month=day_date.month - 1,   # Dukascopy months are 0-indexed
         day=day_date.day,
@@ -101,16 +101,20 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--start", default="2021-01-01")
     ap.add_argument("--end",   default="2025-12-31")
-    ap.add_argument("--out",   default="data/EURUSD_M1.csv")
+    ap.add_argument("--instrument", default=INSTRUMENT,
+                    help="Dukascopy symbol, e.g. EURUSD, GBPUSD, AUDUSD (USD-quoted pairs only)")
+    ap.add_argument("--out",   default=None, help="default: data/<INSTRUMENT>_M1_duka.csv")
     ap.add_argument("--delay", type=float, default=0.1,
                     help="Seconds between requests (be polite to their server)")
     args = ap.parse_args()
 
+    instrument = args.instrument.upper()
+    args.out = args.out or f"data/{instrument}_M1_duka.csv"
     start = date.fromisoformat(args.start)
     end   = date.fromisoformat(args.end)
     total_days = (end - start).days + 1
 
-    log.info("Downloading %s M1 BID  %s -> %s  (%d days)", INSTRUMENT, start, end, total_days)
+    log.info("Downloading %s M1 BID  %s -> %s  (%d days)", instrument, start, end, total_days)
     log.info("Output: %s", args.out)
 
     session = requests.Session()
@@ -121,7 +125,7 @@ def main():
     current = start
 
     while current <= end:
-        df = _download_day(session, current)
+        df = _download_day(session, current, instrument)
         if df is not None and len(df) > 0:
             frames.append(df)
             done += 1
