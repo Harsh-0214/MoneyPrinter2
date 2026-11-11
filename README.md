@@ -1,19 +1,25 @@
 # MoneyPrinter2 — FX + Gold Trading Bot for MetaTrader 5
 
 Automated trading bot for MetaTrader 5 (FOREX.com demo, Canada, CAD account).
-Three bots run side by side, one per market:
+Six bots run side by side, on three markets. Each is one strategy with its own
+position and magic number, so strategies on the same market can hold trades at the same time:
 
-| Bot | Strategy | Bars | Trades/yr | When it trades |
-|---|---|---|---|---|
-| **EURUSD** | London Sweep + Breakout, daily trend filter | 5 min | ~27 | 08:00–11:00 London, exits 16:00 |
-| **GBPUSD** | same (EURUSD and GBPUSD are each other's SMT check) | 5 min | ~38 | same |
-| **XAUUSD** | Daily trend following (55-day breakout, buy-only) | 1 h | ~5 | decides daily, holds for weeks |
+| Bot (unit) | Strategy | Bars | Trades/yr | Magic | When it trades |
+|---|---|---|---|---|---|
+| **EURUSD** | London Sweep + Breakout, daily trend filter | 5 min | ~27 | 12345 | 08:00–11:00 London, exits 16:00 |
+| **GBPUSD** | same (EURUSD and GBPUSD are each other's SMT check) | 5 min | ~38 | 12346 | same |
+| **EURUSD:pullback** | Daily swing pullback (RSI-2, 100-day trend) | 1 h | ~10 | 12445 | decides daily, holds 1–10 days |
+| **GBPUSD:pullback** | Daily swing pullback (RSI-2, 200-day trend) | 1 h | ~11 | 12446 | same |
+| **XAUUSD** | Gold trend following, 55-day breakout, buy-only | 1 h | ~5 | 12347 | decides daily, holds weeks |
+| **XAUUSD:fast** | Gold trend following, 20-day breakout, buy-only | 1 h | ~6 | 12447 | same |
 
 **Portfolio backtest, 2021–2025, 1% risk per trade, real spreads:**
-**+45.2% (7.8%/yr), max drawdown −11.1%, PF 1.42**.
-By year: +11.8 · +11.0 · −0.1 · −1.5 · +19.0. This is a backtest, not a promise;
-see the caveats under "Strategy arsenal". A step-by-step guide is in
-**`docs/MoneyPrinter2_Guide.pdf`**.
+**+69.4% (11.2%/yr), max drawdown −9.7%, PF 1.54, no losing year.**
+By year: +12.6 · +13.1 · +0.2 · +4.3 · +27.3. The three newest strategies were
+picked from 54 candidates, so expect live results to be somewhat lower. This is a
+backtest, not a promise; see the caveats under "Strategy arsenal". All bots
+together never risk more than `live.max_open_risk_pct` (5%) at once.
+A step-by-step guide is in **`docs/MoneyPrinter2_Guide.pdf`**.
 
 ## Honest results (2021–2025): EUR + GBP stack
 
@@ -212,12 +218,49 @@ All positions close at **16:00 London** if still open.
 - **Restarts:** the bot replays ~120 days of hourly bars at startup to rebuild the
   channel. A signal stays valid all day, so a restart doesn't miss it.
 
+### 4. Daily swing pullback (EURUSD:pullback, GBPUSD:pullback)
+- **Trend:** the daily close versus its 100-day average (EURUSD) or 200-day average (GBPUSD).
+- **Entry:** in an uptrend, buy when the 2-day RSI of daily closes drops below 10
+  (a sharp 1–3 day dip). In a downtrend, sell when it rises above 90.
+- **Exit:** a daily close back above (or below) the 5-day average, or after 10 days.
+  There's a protective stop at 3× the daily ATR.
+- **Why it's here:** about 70% of trades win. Its monthly returns are uncorrelated
+  with the London stack (+0.03 / −0.04), so it smooths the portfolio, adding
+  +0.5–0.7%/yr per pair at a −1.3 to −2.9% drawdown.
+
+### 5. Fast gold trend (XAUUSD:fast)
+The same rules as the 55-day gold trend, but with a 20-day breakout entry and a
+10-day low exit. It catches shorter gold trends the slow system misses.
+2021–2025 alone: +18.1%, PF 2.94, max drawdown −3.6%. Correlation with the rest
+of the portfolio is +0.35, because both are gold trend systems.
+
+### Strategy research round 2 (same markets, new styles)
+Tested on EURUSD, GBPUSD and gold (`run_arsenal.py`, `results/arsenal_round2.csv`):
+the daily swing pullback, volatility breakout (open ± k×yesterday's range),
+NR7 / NR4 / inside-day breakouts, the previous-day high/low breakout, and the
+20-day gold trend. **Adopted:** the daily pullback on EUR and GBP, and the 20-day
+gold trend. **Rejected:** volatility breakout and previous-day breakout lost on
+all three markets; NR7/NR4 were ~breakeven. The gold inside-day breakout made
+money (+12%, PF 1.56) but raised the portfolio drawdown to −14%, and its close
+cousins didn't work, so it was left out.
+
+| Portfolio (1% risk each) | Trades/yr | 5-yr | Per year | Max DD |
+|---|---|---|---|---|
+| EUR+GBP stack + gold 55-day | 70 | +45% | 7.8% | −11.1% |
+| + gold 20-day + EUR/GBP daily pullbacks (**live**) | 98 | +69% | 11.2% | −9.7% |
+| + gold inside-day breakout too | 116 | +82% | 12.7% | −14.2% |
+
 ### Position sizing
 Each trade risks 1% of equity (`risk.risk_per_trade_pct`), measured on
 `live.equity_cap` (50,000) and converted to the account currency (CAD) with
 MT5's own rate: `units = equity × 1% / (stop distance × USD→CAD)`.
 For gold, units are ounces (1 lot = 1 oz on FOREX.com).
 A 2% daily loss stops new entries for the rest of the day.
+**Portfolio risk cap:** before any order, the bot adds up what every open bot
+position would lose at its stop (across all markets and magic numbers). If that
+plus the new trade's 1% exceeds `live.max_open_risk_pct` (5% = 2,500 CAD), the
+trade is skipped and logged as `RISK CAP`. Positions whose stop is already at or
+past entry count as zero.
 
 ---
 
@@ -229,7 +272,7 @@ python -m venv venv
 venv\Scripts\activate
 pip install -r requirements.txt
 copy .env.example .env          # fill in MT5 login, password, server, terminal path
-python -m pytest -q             # 51 tests
+python -m pytest -q             # 53 tests
 python run_backtest.py --synthetic   # random data: should lose ~the spread
 ```
 
@@ -256,17 +299,20 @@ python run_backtest.py            # single-pair run, writes results/trades.csv, 
 
 ## Run live (demo)
 ```
-start_bots.bat                                 # MT5 + all three bots, auto-restart on crash
+start_bots.bat                                 # MT5 + all six bots, auto-restart on crash
 stop_bots.bat                                  # stop the bots (positions are left alone)
 python run_live.py --pair XAUUSD --dry-run     # one bot, log only
+python run_live.py --pair EURUSD --sleeve pullback   # an extra-strategy bot
 python run_report.py                           # demo results vs backtest expectations
 ```
 - Each bot runs its market's strategies exactly like the backtest (`route_morning`).
   EURUSD and GBPUSD use each other as the SMT feed.
 - Only closed bars are used. Missed bars are caught up. On startup and after every
   reconnect the bot replays today's bars (or `warmup_days` of history for gold).
-- Each pair has its own magic number (`live.magic` + its index in `pairs`:
-  EURUSD 12345, GBPUSD 12346, XAUUSD 12347).
+- Each bot has its own magic number. Main strategies are `live.magic` + the pair's
+  index (EURUSD 12345, GBPUSD 12346, XAUUSD 12347); sleeve j adds 100×j (12445, 12446, 12447).
+- Logs: `logs/live_<PAIR>[_<sleeve>]_<date>.log`. Chart files: `fxbot_<SYMBOL>[_<sleeve>].txt`;
+  the overlay draws every bot on that market.
 - A second copy for the same pair refuses to start, so trades can't be doubled.
 - **Chart overlay:** attach the `FxbotOverlay` indicator (in `mt5/`, installed and
   compiled into MT5) to a chart. It draws the lines each bot is watching, plus a status panel.
@@ -295,10 +341,10 @@ fxbot/
   data.py  risk.py
   brokers/  sim_broker.py  mt5_broker.py  base.py
   overlay.py             writes the chart-overlay file for MT5
-  strategies/  london_sweep.py  london_breakout.py  trend_follow.py (gold)
+  strategies/  london_sweep.py  london_breakout.py  trend_follow.py (gold)  daily_patterns.py (pullback)
                (+ opening_range, trend_pullback, key_levels, tiny_range_fade,
                   london_close_reversal, ny_breakout, prev_day, mean_reversion: tested, unused)
-tests/                   51 unit tests
+tests/                   53 unit tests
 ```
 
 ## Simulator assumptions (deliberately pessimistic)

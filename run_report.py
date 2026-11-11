@@ -29,6 +29,8 @@ def strategy_of(tag):
         return "London Breakout"
     if tag.startswith("trend_"):
         return "Gold trend"
+    if tag.startswith("dpb_"):
+        return "Daily pullback"
     return tag or "unknown"
 
 
@@ -53,9 +55,10 @@ def expected_stats(cfg, refresh=False):
 
 def live_trades(mt5, cfg, since):
     from fxbot.data import server_ts_to_utc
-    base = int(cfg["live"]["magic"])
-    magics = {base + i: p["symbol"] for i, p in enumerate(cfg["pairs"])}
-    pips = {p["symbol"]: p.get("instrument", {}).get("pip", 0.0001) for p in cfg["pairs"]}
+    from fxbot.backtest import expand_units
+    units = expand_units(cfg)
+    magics = {u["magic"]: u["key"] for u in units}            # e.g. 12445 -> "EURUSD:pullback"
+    pips = {u["key"]: u.get("instrument", {}).get("pip", 0.0001) for u in units}
     deals = mt5.history_deals_get(since, datetime.now(timezone.utc) + timedelta(days=1)) or []
     by_pos = {}
     for d in deals:

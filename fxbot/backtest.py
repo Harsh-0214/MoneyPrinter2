@@ -12,9 +12,12 @@ from .risk import RiskManager
 from .strategies import (LondonBreakout, LondonCloseReversal, LondonSweep,
                           MeanReversion, NYOpenBreakout, PrevDayBreakout,
                           TinyRangeFade, TrendFollow, KeyLevels, OpeningRange,
-                          TrendPullback)
+                          TrendPullback, DailyPullback, VolBreakout, NarrowRangeBreak)
 
 STRATEGY_MAP = {
+    "daily_pullback":   DailyPullback,
+    "vol_breakout":     VolBreakout,
+    "nr_breakout":      NarrowRangeBreak,
     "opening_range":    OpeningRange,
     "trend_pullback":   TrendPullback,
     "key_levels":       KeyLevels,
@@ -80,6 +83,33 @@ def _load_smt_pair(smt_cfg, main_df):
 
 
 PAIR_OVERRIDES = ("strategies", "instrument", "slot_max_trades", "warmup_days")
+
+
+def expand_units(cfg):
+    """Every independently-traded unit: each market's main strategy stack plus each
+    of its extra `sleeves`. A unit has its own position, magic number, bot process,
+    log and lock. Unit keys: "EURUSD" (main), "EURUSD:pullback" (sleeve).
+
+    Magic numbers: main = live.magic + pair index (12345, 12346, 12347 - unchanged);
+    sleeve j (1-based) = live.magic + 100*j + pair index (e.g. 12445).
+    """
+    base = int(cfg.get("live", {}).get("magic", 12345))
+    units = []
+    for idx, pair in enumerate(cfg.get("pairs", [])):
+        main = {k: v for k, v in pair.items() if k != "sleeves"}
+        main.update(key=pair["symbol"], market=pair["symbol"], sleeve=None, magic=base + idx)
+        units.append(main)
+        for j, sl in enumerate(pair.get("sleeves", []), start=1):
+            u = {k: v for k, v in main.items() if k not in ("smt", "strategies", "warmup_days",
+                                                              "slot_max_trades")}
+            u["data"] = dict(main.get("data", {}), **sl.get("data", {}))
+            for k in PAIR_OVERRIDES:
+                if k in sl:
+                    u[k] = sl[k]
+            u.update(key=f"{pair['symbol']}:{sl['name']}", sleeve=sl["name"],
+                     magic=base + 100 * j + idx)
+            units.append(u)
+    return units
 
 
 def pair_config(cfg, pair):

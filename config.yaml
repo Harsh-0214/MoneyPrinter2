@@ -159,6 +159,21 @@ pairs:
       path: data/GBPUSD_M1_histdata.csv
       source_tz: "UTC"
       timeframe: 5min
+    sleeves:                     # extra strategies: own position + magic (12445), own bot
+      - name: pullback           # daily swing pullback: buy dips in uptrends, sell rallies in downtrends
+        data: {timeframe: 1h}
+        warmup_days: 320         # needs 100+ trading days of history at startup
+        strategies:
+          morning:
+            - name: daily_pullback
+              trend_sma: 100     # trend = daily close vs 100-day average
+              rsi_period: 2      # entry: 2-day RSI < 10 (uptrend) or > 90 (downtrend)
+              oversold: 10
+              overbought: 90
+              exit_sma: 5        # exit: close back above / below the 5-day average
+              max_hold_days: 10
+              stop_atr: 3.0      # protective stop 3x daily ATR
+          afternoon: []
 
   - symbol: GBPUSD
     spread_pips: 2.0             # typical FOREX.com demo spread at London open (seen live Nov 2026)
@@ -170,6 +185,21 @@ pairs:
       path: data/EURUSD_M1_histdata.csv
       source_tz: "UTC"
       timeframe: 5min
+    sleeves:
+      - name: pullback           # magic 12446
+        data: {timeframe: 1h}
+        warmup_days: 320         # needs 200+ trading days for the 200-day average
+        strategies:
+          morning:
+            - name: daily_pullback
+              trend_sma: 200     # GBPUSD: 200-day trend (PF 1.87, 4/5 years; 100-day was weak)
+              rsi_period: 2
+              oversold: 10
+              overbought: 90
+              exit_sma: 5
+              max_hold_days: 10
+              stop_atr: 3.0
+          afternoon: []
 
   # --- Gold: its own strategy (daily trend following), not the London stack ---
   # Arsenal research Nov 2026 (run_arsenal.py): London stack loses on gold; daily
@@ -201,6 +231,19 @@ pairs:
           stop_atr: 2.0          # stop 2x daily ATR below entry, then trails the best price
           long_only: true        # shorts on gold lost money in every test
       afternoon: []
+    sleeves:
+      - name: fast               # magic 12447: faster gold trend, catches shorter trends
+        warmup_days: 120
+        strategies:
+          morning:
+            - name: trend_follow
+              signal: donchian
+              entry_days: 20     # 2021-25 alone: +18.1%, PF 2.94, max DD -3.6%
+              exit_days: 10
+              atr_days: 20
+              stop_atr: 2.0
+              long_only: true
+          afternoon: []
 
   # AUDUSD tested Nov 2026 with unchanged params: 2021-23 +0.0%, 2024-25 +5.1%,
   # breakeven at 1.5-pip spread. Adds ~1%/yr but raises max DD -10.6% -> -13.4%.
@@ -219,5 +262,6 @@ live:
   symbol_suffix: "."         # FOREX.com Canada uses a trailing dot (EURUSD., GBPUSD.)
   server_tz: "Europe/Helsinki"  # broker server timezone (MT5 uses this for bar timestamps)
   magic: 12345               # base magic; each pair uses magic + its index in pairs:
+  max_open_risk_pct: 5.0     # portfolio cap: all bots' open risk combined (on equity_cap) never exceeds this
   equity_cap: 50000          # size trades as if the account were this big (null = use real equity)
   allow_live: false          # must be true AND --allow-live flag set to run on a real account

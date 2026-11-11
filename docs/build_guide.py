@@ -193,37 +193,48 @@ def build():
             ParagraphStyle("ST", parent=BODY, fontSize=12.5, textColor=MUTED)),
           Spacer(1, 10)]
     s.append(callout(
-        "<b>In one paragraph.</b> Three small programs (\"bots\") watch three markets on your "
-        "MetaTrader 5 demo account and place trades on their own. EURUSD and GBPUSD are traded "
-        "around the London open with two rule-based strategies (the <i>Sweep</i> and the "
-        "<i>Breakout</i>). Gold is traded with a slow daily trend-following strategy that holds "
-        "for weeks. Each trade risks 1% of a $50,000 sizing base (about $500 CAD). Over "
-        "2021-2025 the combination backtested at <b>+45% total (about 7.8% a year), with a worst "
-        "drop of -11%</b>. That is a backtest, not a promise. The demo period is there to check it."))
+        "<b>In one paragraph.</b> Six small programs (\"bots\") watch three markets on your "
+        "MetaTrader 5 demo account and place trades on their own. Each bot runs one strategy, so "
+        "different strategies on the same market can hold trades at the same time. EURUSD and "
+        "GBPUSD are traded around the London open (the <i>Sweep</i> and the <i>Breakout</i>) and "
+        "with a daily <i>swing pullback</i>. Gold is traded with two daily trend-following systems "
+        "(slow and fast). Each trade risks 1% of a $50,000 sizing base (about $500 CAD), and all "
+        "bots together never risk more than 5% at once. Over 2021-2025 the combination "
+        "backtested at <b>+69% total (about 11% a year), with a worst drop of -9.7% and no "
+        "losing year</b>. That is a backtest, not a promise. The demo period is there to check it."))
     s.append(Spacer(1, 12))
-    s.append(P("The three bots", H2))
+    s.append(P("The six bots", H2))
     s.append(table([
-        ["Market", "Strategy", "Chart", "Trades / year", "When it trades (Toronto time)"],
+        ["Bot", "Strategy", "Chart", "Trades / yr", "When it trades (Toronto time)"],
         ["EURUSD", "London Sweep + London Breakout, daily trend filter", "5 min", "~27",
-         "3:00-6:00 AM entries, everything closed by 11:00 AM"],
+         "3:00-6:00 AM entries, closed by 11:00 AM"],
         ["GBPUSD", "Same as EURUSD (the two pairs cross-check each other)", "5 min", "~38", "Same"],
-        ["XAUUSD (gold)", "Daily trend following, buy-only", "1 hour", "~5",
-         "Decides once a day (7 PM), holds days to weeks"],
-    ], [0.95 * inch, 2.15 * inch, 0.55 * inch, 0.8 * inch, 2.05 * inch]))
+        ["EURUSD pullback", "Daily swing pullback (buy dips in uptrends)", "1 hour", "~10",
+         "Decides daily (7 PM), holds 1-10 days"],
+        ["GBPUSD pullback", "Same, with a 200-day trend", "1 hour", "~11", "Same"],
+        ["XAUUSD", "Gold trend following, 55-day, buy-only", "1 hour", "~5",
+         "Decides daily (7 PM), holds weeks"],
+        ["XAUUSD fast", "Gold trend following, 20-day, buy-only", "1 hour", "~6", "Same"],
+    ], [1.05 * inch, 2.15 * inch, 0.55 * inch, 0.7 * inch, 2.05 * inch]))
     s.append(Spacer(1, 10))
     s.append(P("Backtest results, 2021-2025 (1% risk per trade, your account's real costs)", H2))
     s.append(table([
         ["", "5-year return", "Per year", "Worst drop", "Profit factor", "Trades"],
         ["EURUSD stack", "+9.3%", "1.8%", "-11.1%", "1.25", "135"],
         ["GBPUSD stack", "+21.0%", "3.9%", "-8.5%", "1.32", "192"],
-        ["Gold trend", "+14.9%", "2.8%", "-4.3%", "3.55", "24"],
-        ["<b>All three together</b>", "<b>+45.2%</b>", "<b>7.8%</b>", "<b>-11.1%</b>", "<b>1.42</b>", "<b>351</b>"],
+        ["EURUSD pullback", "+2.6%", "0.5%", "-2.9%", "1.40", "52"],
+        ["GBPUSD pullback", "+3.6%", "0.7%", "-1.3%", "1.87", "54"],
+        ["Gold trend (55-day)", "+14.9%", "2.8%", "-4.3%", "3.55", "24"],
+        ["Gold trend fast (20-day)", "+18.1%", "3.4%", "-3.6%", "2.94", "32"],
+        ["<b>All six together</b>", "<b>+69.4%</b>", "<b>11.2%</b>", "<b>-9.7%</b>", "<b>1.54</b>", "<b>489</b>"],
     ], [1.6 * inch, 1.0 * inch, 0.8 * inch, 1.0 * inch, 1.0 * inch, 1.1 * inch]))
     s.append(Spacer(1, 6))
     s.append(table([
         ["Year", "2021", "2022", "2023", "2024", "2025"],
-        ["All three bots", "+11.8%", "+11.0%", "-0.1%", "-1.5%", "+19.0%"],
+        ["All six bots", "+12.6%", "+13.1%", "+0.2%", "+4.3%", "+27.3%"],
     ], [1.6 * inch] + [0.98 * inch] * 5))
+    s.append(P("The four newer strategies were chosen from many candidates, so some of their "
+               "backtest strength is luck. Expect live results to be lower.", SMALL))
     s.append(P("Profit factor = money won / money lost. Above 1.0 makes money; 1.3+ is solid "
                "for this kind of strategy. \"Worst drop\" is the largest fall from a peak.", SMALL))
 
@@ -237,7 +248,7 @@ def build():
     s.append(table([
         ["London", "Toronto", "What happens"],
         ["00:00-08:00", "7 PM-3 AM", "EURUSD/GBPUSD bots record the overnight (\"Asian\") high and low: the <b>range</b>. "
-         "The gold bot makes its once-a-day decision at 00:00 London."],
+         "The gold and pullback bots make their once-a-day decisions at 00:00 London."],
         ["08:00-10:30", "3:00-5:30 AM", "The <b>Sweep</b> watches for a fake break of the range followed by a sharp reversal."],
         ["10:30-11:00", "5:30-6:00 AM", "If no Sweep happened, the <b>Breakout</b> checks whether price broke out of the range and is still outside it."],
         ["13:30-16:00", "8:30-11:00 AM", "New York opens. This is where most of the profit on open trades is made."],
@@ -301,6 +312,22 @@ def build():
         "came in 2024-2025 (a strong gold rally). In sideways years it roughly breaks even.",
         "<b>Holds overnight,</b> so financing (\"swap\") applies. The backtest assumes a pessimistic "
         "-6.5% a year on the position's value.",
+        "<b>Fast version (XAUUSD fast):</b> the same rules with a 20-day high to buy and a 10-day "
+        "low to exit. It catches shorter gold trends the slow system misses. Both can be in a trade "
+        "at the same time (2% at risk on gold).",
+    ])
+    s.append(P("2.5 Daily swing pullback (EURUSD pullback, GBPUSD pullback)", H2))
+    s.append(P("A completely different style from the London strategies: buy a short, sharp dip "
+               "inside a bigger uptrend, and sell the bounce a few days later."))
+    s += bullets([
+        "<b>Trend:</b> the daily close versus its 100-day average (EURUSD) or 200-day average (GBPUSD).",
+        "<b>Entry:</b> in an uptrend, buy when the 2-day RSI of daily closes drops below 10 "
+        "(price fell hard for 1-3 days). In a downtrend, sell when it rises above 90.",
+        "<b>Exit:</b> when the daily close gets back above the 5-day average (or below it for sells), "
+        "or after 10 days. There's a protective stop at 3 times the daily range.",
+        "<b>Why it's here:</b> about 70% of trades win, and it makes and loses money at different "
+        "times from the London strategies (correlation about 0), so it smooths the overall results. "
+        "Profits are small per pair (+0.5-0.7% a year) but steady.",
     ])
 
     # ---------------------------------------------------------------- risk
@@ -317,6 +344,9 @@ def build():
         "asks MT5 for the live conversion rate (about 1.42) so the risk really is 500 CAD.",
         "<b>Daily loss limit:</b> after losing 2% (1,000 CAD) in a day, no new trades open until tomorrow.",
         "<b>Leverage cap:</b> a position can never exceed 10 times the sizing base.",
+        "<b>Portfolio cap:</b> before any trade, the bot adds up what all open bot trades would lose "
+        "at their stops. If that plus the new trade is over 5% (2,500 CAD), the trade is skipped "
+        "(logged as RISK CAP). Trades whose stop is already at breakeven count as zero.",
         "<b>Sizing base:</b> <font face='Courier'>equity_cap: 50000</font> in config.yaml sizes trades as if the account "
         "were exactly 50,000, plus or minus the bot's own profit and loss since it started.",
         "<b>At 1% risk</b> the backtest's worst drop was about -11% (-5,500 CAD). At 0.5% risk, "
@@ -347,12 +377,15 @@ def build():
     s.append(P("5.1 Start, stop, check", H2))
     s.append(table([
         ["To...", "Do this"],
-        ["Start everything", "Double-click <font face='Courier'>start_bots.bat</font>. It opens MT5 if needed, then three "
-         "windows: fxbot EURUSD / GBPUSD / XAUUSD. Each restarts itself 60 s after a crash."],
+        ["Start everything", "Double-click <font face='Courier'>start_bots.bat</font>. It opens MT5 if needed, then six "
+         "windows: EURUSD, GBPUSD, XAUUSD, EURUSD pullback, GBPUSD pullback and XAUUSD fast. "
+         "Each restarts itself 60 s after a crash."],
         ["Stop the bots", "Double-click <font face='Courier'>stop_bots.bat</font> (or close the windows). Open "
          "trades stay open, with their stop and target held at the broker."],
         ["Run one bot by hand", "<font face='Courier'>venv\\Scripts\\activate</font>, then "
-         "<font face='Courier'>python run_live.py --pair EURUSD</font>"],
+         "<font face='Courier'>python run_live.py --pair EURUSD</font> (add "
+         "<font face='Courier'>--sleeve pullback</font> or <font face='Courier'>--sleeve fast</font> "
+         "for the extra strategies)"],
         ["Watch without trading", "add <font face='Courier'>--dry-run</font> (logs what it would do, sends nothing)"],
         ["See how the demo is doing", "<font face='Courier'>python run_report.py</font>: every bot trade, P/L in CAD, "
          "R, slippage, and the backtest's expectation for comparison"],
@@ -400,7 +433,10 @@ def build():
     s.append(table([
         ["Idea", "Result", "Verdict"],
         ["London Sweep + Breakout with trend filter (EUR, GBP)", "+30% at 1% risk, PF 1.30", "<b>LIVE</b>"],
-        ["Gold daily trend following, buy-only", "+14.9%, PF 3.55, worst drop -4.3%", "<b>LIVE</b>"],
+        ["Gold daily trend following, buy-only (55-day and 20-day)", "+14.9% / +18.1%, PF 3.55 / 2.94", "<b>LIVE</b>"],
+        ["Daily swing pullback on EURUSD / GBPUSD", "+2.6% / +3.6%, PF 1.40 / 1.87, ~70% winners", "<b>LIVE</b>"],
+        ["Volatility breakout, previous-day breakout", "lost on all three markets", "rejected"],
+        ["NR7 / NR4 / inside-day breakouts", "about break-even (gold inside-day +12% but raised drawdown)", "rejected"],
         ["Same London strategies on gold or AUDUSD", "about break-even or losing", "rejected"],
         ["Opening-range breakouts (London / NY open)", "lost 27-91% in 5 years", "rejected"],
         ["Pullback scalping (RSI-2 on 5m / 15m / 1h)", "lost 21-99%, 190-780 trades/yr", "rejected"],
@@ -438,8 +474,8 @@ def build():
          "real account at low risk). <b>Much worse</b>, so find out why (costs, execution, market change) before changing "
          "anything. <b>Unclear</b>, so keep running; small samples swing a lot."],
     ], [1.5 * inch, 5.0 * inch])]))
-    s.append(P("What to expect: roughly 1-2 FX trades a week across both pairs, a gold trade every "
-               "couple of months, losing weeks and possibly losing months. One trade, or one "
+    s.append(P("What to expect: roughly 2 trades a week across all six bots, a gold trade every "
+               "month or two, losing weeks and possibly losing months. One trade, or one "
                "week, tells you almost nothing.", SMALL))
 
     # ---------------------------------------------------------------- reference
@@ -465,6 +501,7 @@ def build():
         ["Setting (config.yaml)", "Now", "Effect"],
         ["risk.risk_per_trade_pct", "1.0", "% of the sizing base lost if a stop is hit. Halve it to halve both returns and drawdowns."],
         ["live.equity_cap", "50000", "sizing base. null = use the real account equity."],
+        ["live.max_open_risk_pct", "5.0", "most that all open bot trades together may lose at their stops"],
         ["risk.max_daily_loss_pct", "2.0", "no new trades for the day after this loss"],
         ["pairs: spread_pips", "1.4 / 2.0 / 8.0", "cost assumption for backtests (live uses the real spread)"],
         ["live.allow_live", "false", "must be true, plus --allow-live, before it will touch a real-money account"],
@@ -473,8 +510,9 @@ def build():
     s += bullets([
         "Refuses real-money accounts unless you explicitly enable it twice (config + command flag).",
         "Every order is sent with its stop loss attached, so a crash or power cut still leaves the stop at the broker.",
-        "One bot per market (lock file), with its own magic number: EURUSD 12345, GBPUSD 12346, XAUUSD 12347. "
-        "Bots only manage their own trades, never yours.",
+        "One process per bot (lock file), each with its own magic number: EURUSD 12345, GBPUSD 12346, "
+        "XAUUSD 12347, EURUSD pullback 12445, GBPUSD pullback 12446, XAUUSD fast 12447. "
+        "Bots only manage their own trades, never yours or each other's.",
         "Closes positions by ticket, which is required on your hedging-mode account. Without this, a close "
         "would open an opposite trade instead.",
         "Daily loss limit, leverage cap, and the CAD conversion so the risk is what it says.",

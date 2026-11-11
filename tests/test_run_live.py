@@ -81,6 +81,42 @@ def test_single_instance_lock():
     b.close()
 
 
+def test_units_and_magics_are_unique():
+    from fxbot.backtest import expand_units
+    cfg = yaml.safe_load(open("config.yaml"))
+    units = expand_units(cfg)
+    keys = [u["key"] for u in units]
+    assert {"EURUSD", "GBPUSD", "XAUUSD", "EURUSD:pullback", "GBPUSD:pullback", "XAUUSD:fast"} <= set(keys)
+    magics = [u["magic"] for u in units]
+    assert len(set(magics)) == len(magics)                       # every bot tracks its own trades
+    m = {u["key"]: u["magic"] for u in units}
+    assert m["EURUSD"] == 12345 and m["GBPUSD"] == 12346 and m["XAUUSD"] == 12347   # unchanged
+    sleeve = run_live._unit(cfg, "EURUSD", "pullback")
+    assert sleeve["strategies"]["morning"][0]["name"] == "daily_pullback"
+    assert "smt" not in sleeve
+
+
+def test_portfolio_risk_guard_blocks_over_cap():
+    class P:   # an open long whose stop is 500 below entry
+        def __init__(self, magic, sl): self.magic, self.sl, self.type = magic, sl, 0
+        price_open, symbol, volume = 1.1, "EURUSD.", 1.0
+    class M:
+        ORDER_TYPE_BUY = 0
+        def __init__(self, ps): self.ps = ps
+        def positions_get(self): return self.ps
+        def order_calc_profit(self, t, s, v, a, b): return -500.0
+    class B:
+        sent = 0
+        def submit(self, o): B.sent += 1; return True
+    guard = run_live.PortfolioRiskGuard(B(), M([P(12345, 1.09), P(12446, 1.09)]), {12345, 12446},
+                                        cap_money=1200, new_trade_risk=500)
+    assert guard.open_risk() == 1000
+    assert guard.submit(object()) is False and B.sent == 0           # 1000 + 500 > 1200
+    guard2 = run_live.PortfolioRiskGuard(B(), M([P(12345, 1.11)]), {12345}, 1200, 500)
+    assert guard2.open_risk() == 0                                    # stop past entry = no risk
+    assert guard2.submit(object()) is True
+
+
 def test_build_morning_uses_strategy_stack():
     cfg = yaml.safe_load(open("config.yaml"))
     names = [type(s).__name__ for s in run_live._build_morning(cfg)]

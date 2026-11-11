@@ -30,6 +30,9 @@ TAG_PREFIXES = {
     "key_levels":      ("kl_",),
     "opening_range":   ("orb",),
     "trend_pullback":  ("pb_",),
+    "daily_pullback":  ("dpb_",),
+    "vol_breakout":    ("vbo_",),
+    "nr_breakout":     ("nrb_",),
 }
 _ALL = tuple(p for ps in TAG_PREFIXES.values() for p in ps)
 

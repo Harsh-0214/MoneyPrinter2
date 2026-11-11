@@ -109,6 +109,51 @@ class CappedEquityBroker:
         return self._b.trades
 
 
+class PortfolioRiskGuard:
+    """Refuses a new order if all bots' open risk plus this trade would exceed the cap.
+
+    Open risk = what each open bot position (any of our magic numbers, any market)
+    would lose if its stop were hit now, in account currency. A position whose stop
+    is at or past its entry (breakeven / trailing) counts as zero.
+    """
+
+    def __init__(self, broker, mt5, magics, cap_money, new_trade_risk):
+        self._b, self._mt5, self._magics = broker, mt5, set(magics)
+        self._cap, self._new = cap_money, new_trade_risk
+
+    def open_risk(self):
+        mt5 = self._mt5
+        total = 0.0
+        for p in mt5.positions_get() or []:
+            if p.magic not in self._magics or not p.sl:
+                continue
+            side = 1 if p.type == mt5.ORDER_TYPE_BUY else -1
+            if (p.sl - p.price_open) * side >= 0:          # stop at/through entry: no risk left
+                continue
+            loss = mt5.order_calc_profit(p.type, p.symbol, p.volume, p.price_open, p.sl)
+            total += abs(loss or 0.0)
+        return total
+
+    def submit(self, order):
+        used = self.open_risk()
+        if used + self._new > self._cap + 1e-6:
+            log.warning("RISK CAP: %.0f already at risk + %.0f new > cap %.0f - trade skipped",
+                        used, self._new, self._cap)
+            return False
+        return self._b.submit(order)
+
+    def equity(self): return self._b.equity()
+    def position(self): return self._b.position()
+    def current_spread_pips(self): return self._b.current_spread_pips()
+    def close_position(self, reason="manual"): return self._b.close_position(reason)
+    def update_stop(self, new_stop_price): return self._b.update_stop(new_stop_price)
+    def shutdown(self): return self._b.shutdown()
+
+    @property
+    def trades(self):
+        return self._b.trades
+
+
 class _NoOrderBroker:
     """Used while replaying today's bars at startup: state only, no orders."""
 
@@ -297,22 +342,37 @@ def _resolve_pair(cfg, pair_name):
     return (_broker_symbol(cfg, pair), smt_sym, int(cfg["live"]["magic"]) + idx)
 
 
-def run(cfg, pair="EURUSD", dry_run=False, allow_live=False):
+def _unit(cfg, pair, sleeve=None):
+    """The unit (market main stack or one of its sleeves) this process trades."""
+    from fxbot.backtest import expand_units
+    key = f"{pair}:{sleeve}" if sleeve else pair
+    units = {u["key"]: u for u in expand_units(cfg)}
+    if key not in units:
+        raise SystemExit(f"{key} is not configured. Options: {list(units)}")
+    return units[key]
+
+
+def run(cfg, pair="EURUSD", dry_run=False, allow_live=False, sleeve=None):
     import MetaTrader5 as mt5
-    from fxbot.backtest import route_morning
+    from fxbot.backtest import expand_units, route_morning
     from fxbot.brokers.mt5_broker import MT5Broker
-    from fxbot.data import PIP
     from fxbot.risk import RiskManager
 
     from fxbot.backtest import instrument_pip, pair_config
 
-    symbol, smt_symbol, magic = _resolve_pair(cfg, pair)
-    cfg = pair_config(cfg, _pair_entry(cfg, pair)[1])     # this market's strategies/costs/timeframe
+    unit = _unit(cfg, pair, sleeve)
+    symbol, smt_symbol, _ = _resolve_pair(cfg, pair)
+    if sleeve:
+        smt_symbol = None                                  # SMT is only for the London stack
+    magic = unit["magic"]
+    all_magics = {u["magic"] for u in expand_units(cfg)}
+    full_cfg = cfg
+    cfg = pair_config(cfg, unit)                           # this unit's strategies/costs/timeframe
     cfg["live"] = dict(cfg["live"], symbol=symbol, magic=magic)
     pip = instrument_pip(cfg)
     warmup_days = int(cfg.get("warmup_days", 0))
-    log.info("Pair %s -> symbol=%s smt=%s magic=%d timeframe=%s strategies=%s",
-             pair, symbol, smt_symbol, magic, cfg["data"]["timeframe"],
+    log.info("Unit %s -> symbol=%s smt=%s magic=%d timeframe=%s strategies=%s",
+             unit["key"], symbol, smt_symbol, magic, cfg["data"]["timeframe"],
              [s["name"] for s in cfg["strategies"]["morning"]])
 
     consecutive_failures = 0
@@ -325,6 +385,12 @@ def run(cfg, pair="EURUSD", dry_run=False, allow_live=False):
             if cap:
                 broker = CappedEquityBroker(broker, cap)
                 log.info("Sizing as if equity = %.0f (live.equity_cap)", cap)
+            max_open = cfg["live"].get("max_open_risk_pct")
+            if max_open:
+                broker = PortfolioRiskGuard(broker, mt5, all_magics,
+                                            float(max_open) / 100 * float(cap or broker.equity()),
+                                            float(cfg["risk"]["risk_per_trade_pct"]) / 100
+                                            * float(cap or broker.equity()))
             for s in [symbol] + ([smt_symbol] if smt_symbol else []):
                 mt5.symbol_select(s, True)
 
@@ -364,7 +430,7 @@ def run(cfg, pair="EURUSD", dry_run=False, allow_live=False):
             log.info("Account currency %s: 1 %s move per unit = %.4f %s (sizing uses this)",
                      acct.currency, symbol[3:6], risk.quote_to_account, acct.currency)
             log.info("Bot started. equity=%.2f dry_run=%s", broker.equity(), dry_run)
-            overlay_path = _overlay_path(mt5, symbol)
+            overlay_path = _overlay_path(mt5, symbol + (f"_{sleeve}" if sleeve else ""))
 
             def _draw():
                 if overlay_path is None:
@@ -462,21 +528,24 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default="config.yaml")
     ap.add_argument("--pair", default="EURUSD")
+    ap.add_argument("--sleeve", default=None,
+                    help="extra strategy on that market, e.g. pullback (EURUSD/GBPUSD) or fast (XAUUSD)")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--allow-live", action="store_true")
     args = ap.parse_args()
 
+    tag = f"{args.pair}_{args.sleeve}" if args.sleeve else args.pair
     global log
-    log = _setup_logging(args.pair)
-    lock = _single_instance_lock(args.pair)        # keep the handle open for the process life
+    log = _setup_logging(tag)
+    lock = _single_instance_lock(tag)              # keep the handle open for the process life
     if lock is None:
         log.error("Another run_live.py is already running for %s - exiting so trades "
-                  "aren't doubled. Close the other one first.", args.pair)
+                  "aren't doubled. Close the other one first.", tag)
         raise SystemExit(2)
     cfg = yaml.safe_load(open(args.config))
     if args.allow_live and not cfg["live"].get("allow_live", False):
         raise SystemExit("--allow-live also requires live.allow_live: true in config.yaml")
-    run(cfg, pair=args.pair, dry_run=args.dry_run, allow_live=args.allow_live)
+    run(cfg, pair=args.pair, dry_run=args.dry_run, allow_live=args.allow_live, sleeve=args.sleeve)
 
 
 if __name__ == "__main__":

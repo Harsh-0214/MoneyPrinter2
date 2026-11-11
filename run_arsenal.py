@@ -49,6 +49,12 @@ ORB_NY = dict(name="opening_range", open_time="13:30", or_minutes=15, entry_end=
 PB = dict(name="trend_pullback", rsi_period=2, oversold=10, overbought=90, exit_rsi=50,
           stop_atr=2.0, max_hold_bars=24, entry_start="07:00", entry_end="19:00",
           exit_time="20:00", max_trades_per_day=3, cooldown_bars=3, daily_trend_filter=True)
+DPB = dict(name="daily_pullback", trend_sma=100, rsi_period=2, oversold=10, overbought=90,
+           exit_sma=5, max_hold_days=10, stop_atr=3.0)
+VBO = dict(name="vol_breakout", k=0.5, entry_start="07:00", entry_end="16:00", exit_time="21:00",
+           stop_range=0.5, trend_sma=50, skip_days=[0])
+NRB = dict(name="nr_breakout", pattern="nr7", entry_start="07:00", entry_end="16:00",
+           exit_time="21:00", target_rr=2.0, trend_sma=50, trail_to_breakeven_rr=1.0)
 NY_SWEEP = _v(SWEEP, range_start="08:00", range_end="12:00", sweep_window_start="13:00",
               sweep_window_end="15:00", entry_cutoff="15:30", session_exit="19:00")
 
@@ -74,6 +80,31 @@ STRATS = {
     "Pullback RSI2 5m":                ("5min", "morning", [_v(PB, max_hold_bars=48)], 3),
     "Pullback RSI2 1h":                ("1h", "morning", [_v(PB, max_hold_bars=12, exit_time="21:00")], 3),
     "Pullback RSI2 15m, extreme 5/95": ("15min", "morning", [_v(PB, oversold=5, overbought=95)], 3),
+    # --- round 2 (same markets, new styles) ---
+    "Daily pullback RSI2, SMA100":     ("1h", "morning", [DPB], 1),
+    "Daily pullback RSI2, SMA200":     ("1h", "morning", [_v(DPB, trend_sma=200)], 1),
+    "Daily pullback RSI2 <5":          ("1h", "morning", [_v(DPB, oversold=5, overbought=95)], 1),
+    "Daily pullback, long only":       ("1h", "morning", [_v(DPB, long_only=True)], 1),
+    "Daily pullback, 2xATR stop":      ("1h", "morning", [_v(DPB, stop_atr=2.0)], 1),
+    "Vol breakout k0.5 +trend":        ("15min", "morning", [VBO], 1),
+    "Vol breakout k0.3 +trend":        ("15min", "morning", [_v(VBO, k=0.3)], 1),
+    "Vol breakout k0.7 +trend":        ("15min", "morning", [_v(VBO, k=0.7)], 1),
+    "Vol breakout k0.5 no trend":      ("15min", "morning", [_v(VBO, trend_sma=None)], 1),
+    "Vol breakout k0.5 BE+2R":         ("15min", "morning", [_v(VBO, trail_to_breakeven_rr=1.0, target_rr=2.0)], 1),
+    "NR7 breakout +trend":             ("15min", "morning", [NRB], 1),
+    "NR4 breakout +trend":             ("15min", "morning", [_v(NRB, pattern="nr4")], 1),
+    "Inside-day breakout +trend":      ("15min", "morning", [_v(NRB, pattern="inside")], 1),
+    "NR7 breakout no target":          ("15min", "morning", [_v(NRB, target_rr=None)], 1),
+    "NR7 breakout no trend":           ("15min", "morning", [_v(NRB, trend_sma=None)], 1),
+    "Prev-day H/L breakout":           ("5min", "morning", [dict(name="prev_day_breakout", buffer_pips=1.0,
+                                                               min_range_pips=20, max_range_pips=150,
+                                                               reward_risk=2.0)], 1),
+    "Trend Donchian 20/10 long 2ATR":  ("1h", "morning", [dict(name="trend_follow", signal="donchian",
+                                                               entry_days=20, exit_days=10, stop_atr=2.0,
+                                                               long_only=True)], 1),
+    "Trend Donchian 55/20 long 2ATR":  ("1h", "morning", [dict(name="trend_follow", signal="donchian",
+                                                               entry_days=55, exit_days=20, stop_atr=2.0,
+                                                               long_only=True)], 1),
     "Trend follow Donchian 55/20":     ("1h", "morning", [dict(name="trend_follow", signal="donchian",
                                                                entry_days=55, exit_days=20, stop_atr=3.0)], 1),
     "Trend follow Donchian 20/10":     ("1h", "morning", [dict(name="trend_follow", signal="donchian",
@@ -160,7 +191,8 @@ def main():
     args = ap.parse_args()
     spread_override = {k: float(v) for k, v in (p.split("=") for p in args.spread.split(",") if p)}
     markets = [m for m in args.markets.split(",") if os.path.exists(MARKETS[m][0])]
-    jobs = [(n, s) for n in STRATS if args.only.lower() in n.lower() for s in markets]
+    keys = [k.strip().lower() for k in args.only.split("|")]      # "--only a|b" = either
+    jobs = [(n, s) for n in STRATS if any(k in n.lower() for k in keys) for s in markets]
     print(f"{len(jobs)} runs ({len(markets)} markets) ...", flush=True)
     rows = []
     with Pool(args.workers, initializer=_init, initargs=(markets, spread_override)) as pool:

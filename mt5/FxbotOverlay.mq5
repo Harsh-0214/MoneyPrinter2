@@ -1,13 +1,15 @@
 //+------------------------------------------------------------------+
 //| FxbotOverlay.mq5                                                  |
-//| Draws what the MoneyPrinter2 Python bot currently "sees":         |
-//| Asian range box, sweep / BOS / breakout lines and a status panel. |
-//| The bot writes  <Common>\Files\fxbot_<SYMBOL>.txt  every candle;  |
-//| this indicator re-reads it every 2 seconds. Display only - it     |
-//| never places or changes orders.                                   |
+//| Draws what the MoneyPrinter2 Python bots currently "see":         |
+//| Asian range box, sweep / BOS / breakout lines, trend channels and |
+//| a status panel. Every bot trading this chart's symbol writes      |
+//|   <Common>\Files\fxbot_<SYMBOL>.txt         (main strategy)       |
+//|   <Common>\Files\fxbot_<SYMBOL>_<sleeve>.txt (extra strategies)   |
+//| after each candle; this indicator re-reads them every 2 seconds.  |
+//| Display only - it never places or changes orders.                 |
 //+------------------------------------------------------------------+
 #property copyright "MoneyPrinter2"
-#property version   "1.00"
+#property version   "1.10"
 #property indicator_chart_window
 #property indicator_plots 0
 
@@ -52,19 +54,13 @@ ENUM_LINE_STYLE ParseStyle(string s)
    return(STYLE_SOLID);
 }
 
-void Redraw()
+// Draw one bot file; returns its status text. n = running object counter.
+string DrawFile(string fname, int &n)
 {
-   string fname = "fxbot_" + _Symbol + ".txt";
    int h = FileOpen(fname, FILE_READ | FILE_TXT | FILE_ANSI | FILE_COMMON |
                            FILE_SHARE_READ | FILE_SHARE_WRITE);
-   if(h == INVALID_HANDLE)
-   {
-      Comment("fxbot overlay: no data for " + _Symbol + " yet (is run_live.py running for this pair?)");
-      return;
-   }
-   ObjectsDeleteAll(0, PFX);
+   if(h == INVALID_HANDLE) return("");
    string status = "";
-   int n = 0;
    datetime now = TimeCurrent();
    while(!FileIsEnding(h))
    {
@@ -107,6 +103,29 @@ void Redraw()
       }
    }
    FileClose(h);
+   return(status);
+}
+
+void Redraw()
+{
+   ObjectsDeleteAll(0, PFX);
+   int n = 0;
+   string status = "";
+   string found;
+   // main bot file first, then any sleeve files (fxbot_<SYMBOL>_<sleeve>.txt)
+   status += DrawFile("fxbot_" + _Symbol + ".txt", n);
+   long hf = FileFindFirst("fxbot_" + _Symbol + "_*.txt", found, FILE_COMMON);
+   if(hf != INVALID_HANDLE)
+   {
+      do
+      {
+         status += "\n" + DrawFile(found, n);
+      }
+      while(FileFindNext(hf, found));
+      FileFindClose(hf);
+   }
+   if(StringLen(status) == 0)
+      status = "fxbot overlay: no data for " + _Symbol + " yet (is a bot running for this market?)";
    Comment(status);
    ChartRedraw();
 }

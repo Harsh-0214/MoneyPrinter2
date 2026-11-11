@@ -10,3 +10,4 @@ from .trend_follow import TrendFollow
 from .key_levels import KeyLevels
 from .opening_range import OpeningRange
 from .trend_pullback import TrendPullback
+from .daily_patterns import DailyPullback, NarrowRangeBreak, VolBreakout

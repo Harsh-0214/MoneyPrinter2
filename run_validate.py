@@ -40,12 +40,14 @@ def _bars(path, tz, tf):
 
 
 def load_pairs(cfg):
-    """Return {symbol: bars_with_smt_columns} for every pair whose file exists."""
+    """Return {unit key: bars_with_smt_columns} for every traded unit (each market's
+    main stack and each extra sleeve, e.g. "EURUSD", "EURUSD:pullback")."""
+    from fxbot.backtest import expand_units
     out = {}
-    for pair in cfg["pairs"]:
+    for pair in expand_units(cfg):
         d = pair["data"]
         if not os.path.exists(d["path"]):
-            print(f"  skip {pair['symbol']}: {d['path']} missing")
+            print(f"  skip {pair['key']}: {d['path']} missing")
             continue
         bars = _bars(d["path"], d["source_tz"], d["timeframe"]).copy()
         smt = pair.get("smt")
@@ -54,7 +56,7 @@ def load_pairs(cfg):
             m = sb[["high", "low"]].reindex(bars.index)
             bars["smt_high"] = m["high"]
             bars["smt_low"] = m["low"]
-        out[pair["symbol"]] = bars
+        out[pair["key"]] = bars
     return out
 
 
@@ -62,11 +64,13 @@ def load_pairs(cfg):
 #  Running                                                                     #
 # --------------------------------------------------------------------------- #
 
-def run_multi(pair_bars, cfg, start=None, end=None, symbols=None):
+def run_multi(pair_bars, cfg, start=None, end=None, symbols=None, exact=False):
     """Run every pair independently on the same equity base and combine PnL."""
-    from fxbot.backtest import pair_config
+    from fxbot.backtest import expand_units, pair_config
     start_eq = cfg["account"]["starting_equity"]
-    pairs = {p["symbol"]: p for p in cfg.get("pairs", [])}
+    pairs = {u["key"]: u for u in expand_units(cfg)}
+    if symbols and not exact:   # "EURUSD" selects the market's main stack AND its sleeves
+        symbols = [k for k in pairs if k in symbols or pairs[k]["market"] in symbols]
     trades_all, pnl = [], None
     for sym, bars in pair_bars.items():
         if symbols and sym not in symbols:
@@ -146,7 +150,7 @@ def walk_forward(pair_bars, cfg):
                         ("OUT-OF-SAMPLE 2024-2025", "2024-01-01", "2025-12-31"),
                         ("FULL 2021-2025", None, None)]:
         for syms, name in [(None, "combined")] + [([p], p) for p in pair_bars]:
-            t, eq = run_multi(pair_bars, cfg, s, e, syms)
+            t, eq = run_multi(pair_bars, cfg, s, e, syms, exact=True)
             rows.append({"period": label, "pairs": name, **summarize(t, eq, se)})
     df = pd.DataFrame(rows)
     print("\n=== WALK-FORWARD (config.yaml unchanged) ===")
