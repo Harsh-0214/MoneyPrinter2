@@ -29,8 +29,13 @@ def compute_spread_pips(df, costs):
 
 class SimBroker(Broker):
     def __init__(self, starting_equity, slippage_pips=0.0, commission_per_lot_per_side=0.0, pip=PIP,
-                 swap_long_per_lot=0.0, swap_short_per_lot=0.0):
+                 swap_long_per_lot=0.0, swap_short_per_lot=0.0,
+                 swap_long_pct=0.0, swap_short_pct=0.0):
         self.balance = float(starting_equity)
+        # Alternative financing model: annual % of position value (e.g. gold longs
+        # ~ -6.5%/yr). Charged per night like the per-lot swap (Wed x3).
+        self.swap_long_pct = float(swap_long_pct) / 100 / 365
+        self.swap_short_pct = float(swap_short_pct) / 100 / 365
         # Overnight financing, USD per 100k units per night (negative = you pay).
         # Charged when a position is held through the 17:00 New York rollover;
         # the Wednesday rollover counts 3 nights (weekend), like real brokers.
@@ -82,7 +87,7 @@ class SimBroker(Broker):
         ask_o, ask_h, ask_l = bid_o + spread, bid_h + spread, bid_l + spread
 
         # 0) overnight swap: did a 17:00 New York rollover pass since the last bar?
-        if self.swap_long or self.swap_short:
+        if self.swap_long or self.swap_short or self.swap_long_pct or self.swap_short_pct:
             self._apply_swap(t)
 
         # 1) close requested on the previous bar -> fill at this open
@@ -101,7 +106,7 @@ class SimBroker(Broker):
                 self.balance -= comm
                 self._pos = Position(o.side, o.units, entry, t, o.stop_loss, o.take_profit,
                                      risk, comm, o.tag)
-                if self.swap_long or self.swap_short:
+                if self.swap_long or self.swap_short or self.swap_long_pct or self.swap_short_pct:
                     self._roll_key = self._roll_day(t)
         self._pending_order = None
 
@@ -149,7 +154,9 @@ class SimBroker(Broker):
                 wd = d.weekday()
                 nights += 3 if wd == 2 else (0 if wd >= 5 else 1)
             rate = self.swap_long if self._pos.side == 1 else self.swap_short
-            amt = rate * self._pos.units * nights
+            pct = self.swap_long_pct if self._pos.side == 1 else self.swap_short_pct
+            px = self._bar.close if self._bar is not None else self._pos.entry_price
+            amt = (rate + pct * px) * self._pos.units * nights
             self.balance += amt
             self._pos.swap += amt
         self._roll_key = key

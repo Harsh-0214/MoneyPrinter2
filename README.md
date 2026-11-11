@@ -96,6 +96,36 @@ even at a realistic 1.5-pip spread. It also made the losing years worse
 (2023 −4.2%, 2024 −5.2% combined). It sits commented out in `config.yaml`
 under `pairs:`.
 
+### Strategy arsenal (Nov 2026, `python run_arsenal.py`)
+23 strategy variants × 4 markets (EURUSD, GBPUSD, AUDUSD, gold), 2021–2025, 1% risk,
+each strategy run alone. Costs are your account's spreads (EUR 1.4, GBP 2.0,
+AUD 1.5 pips, gold $0.80) plus gold financing at −6.5%/yr (long) and −1.5%/yr
+(short). Pip settings are scaled per market by its typical daily range.
+
+| Strategy | Works on | Trades/yr | 5-yr | Max DD | PF | When it earns |
+|---|---|---|---|---|---|---|
+| **London Sweep + Breakout (live)** | **EURUSD, GBPUSD** | 27–32 per pair | +9% / +18% | −11% / −10% | 1.25 / 1.35 | London→NY session moves |
+| **Gold daily trend (Donchian 55/20, 2×ATR)** | **XAUUSD** | ~6 | +14.4% | −4.8% | 2.83 | strong multi-week trends (2024–25) |
+| Gold daily trend, long only (55/20, 3×ATR) | XAUUSD | ~3 | +10.5% | −2.9% | 4.76 | gold bull markets only |
+| London Sweep alone | EUR, GBP | 1–2 | +3.5–3.9% | −2% | 2.3–3.0 | rare, high quality |
+| Opening-range breakout (London / NY, 15–60 min) | none | 100–240 | −27% to −91% | | 0.6–0.9 | loses even at cheap-account spreads |
+| Pullback-in-trend (RSI-2; 5m / 15m / 1h) | none | 190–780 | −21% to −99% | | 0.2–0.9 | loses even at cheap-account spreads |
+| Daily trend following on FX | none | 3–10 | −1% to −10% | | 0.3–1.3 | no edge on EUR/GBP/AUD |
+| Sweep/Breakout on gold or AUDUSD | none | | | | 0.8–1.0 | not at these costs |
+
+Every gold trend setting tested (Donchian 20–100 day entries, 2–4×ATR stops) was
+profitable (PF 1.23–2.86). Most of the profit came in 2024–2025, gold's big
+rally; 2021–2023 were roughly flat.
+
+**Combined portfolio** (EUR+GBP stack + gold trend 55/20 2×ATR, 1% risk each):
+**+44.7% over 5 years (7.7%/yr), max DD −11.5%**. That compares with +30.3%
+(5.5%/yr) and −13.4% for the FX stack alone. By year: +11.1 · +11.4 · −0.3 · −1.5 · +19.0.
+Gold trend made money in 2024, when the FX stack lost.
+
+At cheap raw-spread costs (EUR 0.6, GBP 0.9, gold $0.30) the ranking is the same.
+The breakout and pullback strategies still lose, so for them costs aren't the
+only problem.
+
 ### Extra strategies tested and rejected (Nov 2026, `run_consistency.py`)
 Each one was run alone on EURUSD and GBPUSD for every year 2021–2025 (10
 pair-years). Target: profitable in every pair-year.

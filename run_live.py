@@ -327,7 +327,7 @@ def run(cfg, pair="EURUSD", dry_run=False, allow_live=False):
                 for bar in bars.itertuples():
                     day, lmin = _london_local(bar.Index.to_pydatetime())
                     cur_day = day
-                    fired_day = route_morning(morning, bar, day, lmin, replay, risk, fired_day)
+                    fired_day = route_morning(morning, bar, day, lmin, replay, risk, fired_day, int(cfg.get("slot_max_trades", 1)))
                     last_ts = bar.Index
             # A position already open from today means the morning slot is used
             if broker.position() is not None and cur_day is not None:
@@ -381,7 +381,7 @@ def run(cfg, pair="EURUSD", dry_run=False, allow_live=False):
                     if k == len(new) - 1:
                         # Size the newest bar's order on the actual live spread
                         bar = bar._replace(spread_pips=max(bar.spread_pips, live_spread))
-                    fired_day = route_morning(morning, bar, day, lmin, broker, risk, fired_day)
+                    fired_day = route_morning(morning, bar, day, lmin, broker, risk, fired_day, int(cfg.get("slot_max_trades", 1)))
                     last_ts = bar.Index
                     log.info("Bar %s spread=%.1fpip position=%s equity=%.2f",
                              bar.Index.astimezone(LONDON).strftime("%H:%M"), bar.spread_pips,

@@ -11,9 +11,12 @@ from .data import PIP, filter_dates, load_csv, resample
 from .risk import RiskManager
 from .strategies import (LondonBreakout, LondonCloseReversal, LondonSweep,
                           MeanReversion, NYOpenBreakout, PrevDayBreakout,
-                          TinyRangeFade, TrendFollow, KeyLevels)
+                          TinyRangeFade, TrendFollow, KeyLevels, OpeningRange,
+                          TrendPullback)
 
 STRATEGY_MAP = {
+    "opening_range":    OpeningRange,
+    "trend_pullback":   TrendPullback,
     "key_levels":       KeyLevels,
     "trend_follow":     TrendFollow,
     "tiny_range_fade":  TinyRangeFade,
@@ -76,7 +79,12 @@ def _load_smt_pair(smt_cfg, main_df):
     return main_df
 
 
-def _build_strategies(cfg):
+def instrument_pip(cfg):
+    """Pip size for the instrument being run (0.0001 FX default; e.g. 0.1 for gold)."""
+    return float(cfg.get("instrument", {}).get("pip", PIP))
+
+
+def _build_strategies(cfg, pip=None):
     """Instantiate strategies from config.
 
     Supports two modes:
@@ -91,53 +99,68 @@ def _build_strategies(cfg):
     if "strategies" in cfg:
         def _make(spec):
             cls = STRATEGY_MAP[spec["name"]]
-            return cls(spec, PIP)
+            return cls(spec, pip or PIP)
         morning   = [_make(s) for s in cfg["strategies"].get("morning",   [])]
         afternoon = [_make(s) for s in cfg["strategies"].get("afternoon", [])]
     else:
         s_cfg = cfg["strategy"]
         cls = STRATEGY_MAP.get(s_cfg.get("name", "london_breakout"), LondonBreakout)
-        morning   = [cls(s_cfg, PIP)]
+        morning   = [cls(s_cfg, pip or PIP)]
         afternoon = []
     return morning, afternoon
 
 
-def route_morning(morning, bar, day, lmin, broker, risk, fired_day):
-    """One bar of scored-proposal routing for the morning slot.
+def _slot_used(fired, day, limit):
+    """fired is None, a day (legacy: 1 trade used) or a (day, count) tuple."""
+    if fired is None:
+        return 0
+    if isinstance(fired, tuple):
+        return fired[1] if fired[0] == day else 0
+    return 1 if fired == day else 0
+
+
+def route_morning(morning, bar, day, lmin, broker, risk, fired_day, limit=1):
+    """One bar of scored-proposal routing for a trade slot.
 
     Shared by the backtest and the live runner so both trade identically.
-    Returns the (possibly updated) day on which the morning slot was used.
+    `limit` = trades the slot may open per day (1 = classic one-trade morning).
+    Returns the slot state: the day it was last used (limit 1) or (day, count).
     """
+    used = _slot_used(fired_day, day, limit)
+    open_ok = used < limit
     proposals = []
     for strat in morning:
         if hasattr(strat, "propose"):
             # propose() is ALWAYS called so each strategy's state and
             # session-exit logic run every bar; only submission is gated.
             p = strat.propose(bar, day, lmin, broker, risk)
-            if p is not None and fired_day != day:
+            if p is not None and open_ok:
                 proposals.append((strat, p))
-        elif fired_day != day:
+        elif open_ok:
             n_before = len(broker.trades)
             strat.on_bar(bar, day, lmin, broker, risk)
             if len(broker.trades) > n_before:
-                fired_day = day
-    if proposals and fired_day != day:
+                used += 1
+    if proposals and open_ok:
         best_strat, best_prop = max(proposals, key=lambda x: x[1].score)
         if broker.submit(best_prop.order):
             best_strat.mark_fired()
-            fired_day = day
-    return fired_day
+            used += 1
+    if used == 0:
+        return fired_day
+    return day if limit == 1 else (day, used)
 
 
 def run_backtest(df, cfg, strategy_cls=None):
+    pip = instrument_pip(cfg)
     # Allow caller to pass a single class directly (used by tests and grid scripts)
     if strategy_cls is not None:
         single_cfg = cfg.get("strategy", {})
-        morning   = [strategy_cls(single_cfg, PIP)]
+        morning   = [strategy_cls(single_cfg, pip)]
         afternoon = []
         ref_cfg   = single_cfg
     else:
-        morning, afternoon = _build_strategies(cfg)
+        morning, afternoon = _build_strategies(cfg, pip)
         ref_cfg = cfg.get("strategy")
         if ref_cfg is None:
             specs = (cfg.get("strategies", {}).get("morning", []) +
@@ -160,11 +183,16 @@ def run_backtest(df, cfg, strategy_cls=None):
     local_mins = (local.hour * 60 + local.minute).to_numpy()
 
     broker = SimBroker(cfg["account"]["starting_equity"], c_cfg["slippage_pips"],
-                       c_cfg["commission_per_lot_per_side"], PIP,
-                       c_cfg.get("swap_long_per_lot", 0.0), c_cfg.get("swap_short_per_lot", 0.0))
-    risk = RiskManager(cfg["risk"], PIP)
+                       c_cfg["commission_per_lot_per_side"], pip,
+                       c_cfg.get("swap_long_per_lot", 0.0), c_cfg.get("swap_short_per_lot", 0.0),
+                       c_cfg.get("swap_long_pct", 0.0), c_cfg.get("swap_short_pct", 0.0))
+    r_cfg = dict(cfg["risk"])
+    if "min_units" in cfg.get("instrument", {}):          # e.g. gold: 1 oz, FX: 1,000 units
+        r_cfg["min_units"] = cfg["instrument"]["min_units"]
+    risk = RiskManager(r_cfg, pip)
 
     equity = np.empty(len(df))
+    slot_limit = int(cfg.get("slot_max_trades", 1))   # trades the morning slot may open per day
     prev_day        = None
     morning_fired   = None   # day on which the morning slot was used
     afternoon_fired = None   # day on which the afternoon slot was used
@@ -178,7 +206,8 @@ def run_backtest(df, cfg, strategy_cls=None):
             prev_day = day
 
         # --- Morning strategies: scored-proposal selection ---
-        morning_fired = route_morning(morning, bar, day, lmin, broker, risk, morning_fired)
+        morning_fired = route_morning(morning, bar, day, lmin, broker, risk, morning_fired,
+                                      slot_limit)
 
         # --- Afternoon strategies: independent session ---
         for strat in afternoon:

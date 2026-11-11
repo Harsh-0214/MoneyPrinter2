@@ -8,3 +8,5 @@ from .tiny_range_fade import TinyRangeFade
 from .london_close_reversal import LondonCloseReversal
 from .trend_follow import TrendFollow
 from .key_levels import KeyLevels
+from .opening_range import OpeningRange
+from .trend_pullback import TrendPullback

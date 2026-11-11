@@ -28,6 +28,8 @@ TAG_PREFIXES = {
     "london_close_reversal": ("lcr_",),
     "trend_follow":    ("trend_",),
     "key_levels":      ("kl_",),
+    "opening_range":   ("orb",),
+    "trend_pullback":  ("pb_",),
 }
 _ALL = tuple(p for ps in TAG_PREFIXES.values() for p in ps)
 
