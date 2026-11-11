@@ -6,3 +6,4 @@ matplotlib      # equity chart
 pytest          # tests
 python-dotenv   # load MT5 credentials from .env
 MetaTrader5     # only for fetch_mt5_data.py and run_live.py (Windows)
+reportlab          # only for docs/build_guide.py (the PDF guide)
