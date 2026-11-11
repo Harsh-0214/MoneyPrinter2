@@ -178,21 +178,8 @@ pairs:
       path: data/GBPUSD_M1_histdata.csv
       source_tz: "UTC"
       timeframe: 15min           # SMT feed must match the pair's bars
-    sleeves:                     # extra strategies: own position + magic (12445), own bot
-      - name: pullback           # daily swing pullback: buy dips in uptrends, sell rallies in downtrends
-        data: {timeframe: 1h}
-        warmup_days: 320         # needs 100+ trading days of history at startup
-        strategies:
-          morning:
-            - name: daily_pullback
-              trend_sma: 100     # trend = daily close vs 100-day average
-              rsi_period: 2      # entry: 2-day RSI < 10 (uptrend) or > 90 (downtrend)
-              oversold: 10
-              overbought: 90
-              exit_sma: 5        # exit: close back above / below the 5-day average
-              max_hold_days: 10
-              stop_atr: 3.0      # protective stop 3x daily ATR
-          afternoon: []
+    # EUR pullback sleeve (magic 12445) removed Nov 2026: wins small / loses big (3xATR stop),
+    #   negative in 2026, and with tighter stops its worst year fell to -10.6%.
 
   - symbol: GBPUSD
     spread_pips: 2.0             # typical FOREX.com demo spread at London open (seen live Nov 2026)
@@ -217,7 +204,7 @@ pairs:
               overbought: 90
               exit_sma: 5
               max_hold_days: 10
-              stop_atr: 3.0
+              stop_atr: 1.5      # Nov 2026: 1.5xATR (was 3): PF 1.61, 4/5 years, smaller losses
           afternoon: []
 
   # --- Gold: its own strategy (daily trend following), not the London stack ---
@@ -292,6 +279,8 @@ pairs:
           exit_time: "21:00"
           stop_range: 0.5
           trend_sma: 50
+          trail_to_breakeven_rr: 1.0  # stop -> entry at +1R. Fixed targets cut profit by half
+                                      #   (best breakouts run past 2-3R before 21:00).
           skip_days: [0]
       afternoon: []
 
@@ -317,8 +306,14 @@ live:
                              #   (FOREX.com stops out at 100% margin level, margin call at 120%)
   max_spread_mult: 2.5       # skip a new entry if the live spread > 2.5x the pair's normal spread_pips
                              #   (EURUSD 3.5 pips, GBPUSD 5.0, gold $2.00)
-  max_drawdown_pct: 40.0     # circuit breaker: no new trades once the account is 40% (of equity_cap)
-                             #   below its peak (past the 1-in-20 bad case at 3% risk, -37%).
+  risk_brake:                # smaller trades while the account is below its peak (% of equity_cap):
+    - [8, 2.0]               #   8% down -> 2% risk per trade
+    - [15, 1.0]              #   15% down -> 1%
+    - [20, 0.5]              #   20% down -> 0.5%. Full 3% again once back within 8% of the peak.
+                             # Nov 2026, 3,000 reshuffles of 2021-25 trades: avg ~4.2-4.5%/month,
+                             #   worst 1-in-100 drawdown -24.8%, none past -30% (flat 3%: 41% did).
+  max_drawdown_pct: 28.0     # last resort: no new trades at all 28% below the peak (open trades
+                             #   at 0.5% risk can't take it past 30%). Never reached in the tests.
                              #   below its peak. Resume: delete data/state/peak_equity.json
   equity_cap: 50000          # size trades as if the account were this big (null = use real equity)
   allow_live: false          # must be true AND --allow-live flag set to run on a real account

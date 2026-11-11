@@ -303,6 +303,25 @@ class DrawdownBreaker:
         return self._b.trades
 
 
+def brake_risk(base_risk_pct, drawdown_pct, tiers):
+    """Risk per trade after the drawdown brake. tiers = [[dd_pct, risk_pct], ...]:
+    once the account is dd_pct below its peak, risk drops to risk_pct (deepest tier
+    reached wins). Back above a tier's level = that tier's cut is lifted."""
+    risk = float(base_risk_pct)
+    for dd, r in sorted(tiers or []):
+        if drawdown_pct >= float(dd):
+            risk = min(risk, float(r))
+    return risk
+
+
+def account_drawdown_pct(mt5, base):
+    """How far the account is below its stored peak, as % of the sizing base."""
+    acct, peak = mt5.account_info(), DrawdownBreaker.peak()
+    if acct is None or peak is None or not base:
+        return 0.0
+    return max(0.0, (peak - acct.equity) / float(base) * 100)
+
+
 def market_open(now_utc):
     """FX/gold trading hours, roughly: Sunday 22:00 UTC to Friday 21:00 UTC, minus the
     daily 21:00-23:00 UTC rollover/maintenance window. Used by the stall watchdog."""
@@ -591,6 +610,10 @@ class StrategyRunner:
             broker = CappedEquityBroker(broker, cap)
         from fxbot import narrate
         base = float(cap or broker.equity())
+        self._mt5, self._base = mt5, base
+        self._base_risk = float(cfg["risk"]["risk_per_trade_pct"])
+        self._brake = cfg["live"].get("risk_brake") or []
+        self._braked_at = self._base_risk
         risk_money = float(cfg["risk"]["risk_per_trade_pct"]) / 100 * base
         guard = None
         max_open = cfg["live"].get("max_open_risk_pct")
@@ -681,6 +704,27 @@ class StrategyRunner:
             narrate.say("%s skipped a trade because big news is close: %s.", self.label, describe_event(ev))
 
     # ------------------------------------------------------------------ each poll
+    def _apply_risk_brake(self):
+        """Cut risk per trade while the account is in a drawdown (live.risk_brake)."""
+        if not self._brake:
+            return
+        dd = account_drawdown_pct(self._mt5, self._base)
+        risk = brake_risk(self._base_risk, dd, self._brake)
+        self.risk.risk_pct = risk
+        if risk != self._braked_at:
+            from fxbot import narrate
+            if risk < self._braked_at:
+                self.log.warning("RISK BRAKE: account %.1f%% below its peak - risk per trade %.2f%% -> %.2f%%",
+                                 dd, self._braked_at, risk)
+                narrate.say("%s: the account is %.1f%% below its best level, so trades are now smaller "
+                            "(risk %.2f%% per trade instead of %.2f%%).", self.label, dd, risk, self._braked_at)
+            else:
+                self.log.info("RISK BRAKE eased: drawdown %.1f%% - risk per trade %.2f%% -> %.2f%%",
+                              dd, self._braked_at, risk)
+                narrate.say("%s: the account has recovered to %.1f%% below its best, so risk is back up "
+                            "to %.2f%% per trade.", self.label, dd, risk)
+            self._braked_at = risk
+
     def step(self, mt5):
         from fxbot.backtest import route_morning
         self._apply_news()
@@ -696,6 +740,7 @@ class StrategyRunner:
         if len(new):
             live_spread = broker.current_spread_pips()
             self.risk.quote_to_account = self.real_broker.quote_to_account()
+            self._apply_risk_brake()
         for k, bar in enumerate(new.itertuples()):
             day, lmin = _london_local(bar.Index.to_pydatetime())
             if day != self.cur_day:

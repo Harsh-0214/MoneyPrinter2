@@ -86,12 +86,13 @@ def test_units_and_magics_are_unique():
     cfg = yaml.safe_load(open("config.yaml"))
     units = expand_units(cfg)
     keys = [u["key"] for u in units]
-    assert {"EURUSD", "GBPUSD", "XAUUSD", "EURUSD:pullback", "GBPUSD:pullback", "XAUUSD:fast"} <= set(keys)
+    assert {"EURUSD", "GBPUSD", "XAUUSD", "USDJPY", "GBPUSD:pullback", "XAUUSD:fast"} <= set(keys)
     magics = [u["magic"] for u in units]
     assert len(set(magics)) == len(magics)                       # every bot tracks its own trades
     m = {u["key"]: u["magic"] for u in units}
     assert m["EURUSD"] == 12345 and m["GBPUSD"] == 12346 and m["XAUUSD"] == 12347   # unchanged
-    sleeve = run_live._unit(cfg, "EURUSD", "pullback")
+    assert m["USDJPY"] == 12348 and m["GBPUSD:pullback"] == 12446
+    sleeve = run_live._unit(cfg, "GBPUSD", "pullback")
     assert sleeve["strategies"]["morning"][0]["name"] == "daily_pullback"
     assert "smt" not in sleeve
 
@@ -182,3 +183,14 @@ def test_margin_guard_shrinks_or_skips():
     assert 270000 < B.sent[-1] < 275000                                           # 15k / 22k of 400k
     M.margin = 33000.0                                                            # room 2k
     assert g.submit(Order(1, 400000, 1.09)) is False and len(B.sent) == 2         # < 25% fits: skipped
+
+
+def test_risk_brake_tiers():
+    tiers = [[8, 2.0], [15, 1.0], [20, 0.5]]
+    assert run_live.brake_risk(3.0, 0.0, tiers) == 3.0
+    assert run_live.brake_risk(3.0, 7.9, tiers) == 3.0
+    assert run_live.brake_risk(3.0, 8.0, tiers) == 2.0
+    assert run_live.brake_risk(3.0, 16.0, tiers) == 1.0
+    assert run_live.brake_risk(3.0, 25.0, tiers) == 0.5
+    assert run_live.brake_risk(3.0, 25.0, []) == 3.0
+    assert run_live.brake_risk(1.0, 9.0, tiers) == 1.0        # never raises risk
