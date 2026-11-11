@@ -304,8 +304,10 @@ pairs:
       morning:
         - name: vol_breakout
           k: 0.9
-          entry_start: "07:00"
-          entry_end: "16:00"
+          entry_start: "05:00"       # Nov 2026 window grid (start 03-07 x end 10-16): every window ending
+          entry_end: "12:00"         #   12:00 beat 16:00 (12-16 London = US data/NY open whipsaw).
+                                     #   05-12 vs 07-16: 2021-25 PF 2.35 vs 1.58, DD -5.0% vs -7.5%;
+                                     #   2026 +6.8% vs +4.2%. Results/entry_windows.csv.
           exit_time: "21:00"
           stop_range: 0.5
           trend_sma: 50
