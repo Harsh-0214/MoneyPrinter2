@@ -167,7 +167,10 @@ def _add_daily_ema(mt5, symbol, cfg, bars):
         ema = daily_ema_series(h1["close"], period)
         _EMA_CACHE.clear()
         _EMA_CACHE[key] = ema
-        log.info("Daily trend: %d-day average of %s = %.5f", period, symbol, ema.iloc[-1])
+        uses_trend = any(s.get("ema_filter") or s.get("daily_trend_filter")
+                         for s in cfg.get("strategies", {}).get("morning", []))
+        if uses_trend:
+            log.info("Daily trend: %d-day average of %s = %.5f", period, symbol, ema.iloc[-1])
     bars["daily_ema"] = ema.reindex(bars.index, method="ffill")
 
 
@@ -183,10 +186,13 @@ def _fetch_completed_bars(mt5, symbol, smt_symbol, cfg, start_utc):
 
     tf = cfg["data"]["timeframe"]
     tf_delta = pd.Timedelta(tf)
+    # Timeframes MT5 serves directly (gold runs on 1h); others are built from M1
+    native = {"1h": getattr(mt5, "TIMEFRAME_H1", None), "15min": getattr(mt5, "TIMEFRAME_M15", None)}
+    mt_tf = native.get(tf) or mt5.TIMEFRAME_M1
 
     def _m1(sym):
         # Pad the start: MT5 indexes by server time (UTC+2/+3)
-        rates = mt5.copy_rates_range(sym, mt5.TIMEFRAME_M1,
+        rates = mt5.copy_rates_range(sym, mt_tf,
                                      (start_utc - timedelta(hours=4)).replace(tzinfo=None),
                                      (datetime.now(timezone.utc) + timedelta(hours=4)).replace(tzinfo=None))
         if rates is None or len(rates) == 0:
@@ -203,7 +209,7 @@ def _fetch_completed_bars(mt5, symbol, smt_symbol, cfg, start_utc):
     m1 = _m1(symbol)
     if m1 is None or len(m1) == 0:
         return None
-    bars = resample(m1, tf)
+    bars = m1.copy() if mt_tf != mt5.TIMEFRAME_M1 else resample(m1, tf)
     now = pd.Timestamp.now(tz="UTC")
     bars = bars[bars.index + tf_delta <= now]          # completed bars only
     bars = bars[bars.index >= pd.Timestamp(start_utc)]
@@ -214,7 +220,7 @@ def _fetch_completed_bars(mt5, symbol, smt_symbol, cfg, start_utc):
     if smt_symbol:
         s1 = _m1(smt_symbol)
         if s1 is not None and len(s1):
-            sb = resample(s1, tf)[["high", "low"]].reindex(bars.index)
+            sb = (s1 if mt_tf != mt5.TIMEFRAME_M1 else resample(s1, tf))[["high", "low"]].reindex(bars.index)
             bars["smt_high"] = sb["high"]
             bars["smt_low"] = sb["low"]
     return bars
@@ -262,29 +268,33 @@ def _overlay_path(mt5, symbol):
 
 
 def _build_morning(cfg):
-    from fxbot.backtest import STRATEGY_MAP
-    from fxbot.data import PIP
+    from fxbot.backtest import STRATEGY_MAP, instrument_pip
+    pip = instrument_pip(cfg)
     if "strategies" in cfg:
-        return [STRATEGY_MAP[s["name"]](s, PIP) for s in cfg["strategies"]["morning"]]
+        return [STRATEGY_MAP[s["name"]](s, pip) for s in cfg["strategies"]["morning"]]
     s = cfg["strategy"]
-    return [STRATEGY_MAP[s.get("name", "london_breakout")](s, PIP)]
+    return [STRATEGY_MAP[s.get("name", "london_breakout")](s, pip)]
 
 
-def _resolve_pair(cfg, pair_name):
-    """Return (broker_symbol, smt_broker_symbol, magic) for the chosen pair."""
-    live = cfg["live"]
-    suffix = live.get("symbol_suffix", ".")
+def _pair_entry(cfg, pair_name):
     pairs = cfg.get("pairs") or [{"symbol": "EURUSD"}]
     names = [p["symbol"] for p in pairs]
     if pair_name not in names:
         raise SystemExit(f"--pair {pair_name} not in config pairs {names}")
-    idx = names.index(pair_name)
-    pair = pairs[idx]
+    return names.index(pair_name), pairs[names.index(pair_name)], names
+
+
+def _broker_symbol(cfg, pair):
+    return pair.get("broker_symbol") or pair["symbol"] + cfg["live"].get("symbol_suffix", ".")
+
+
+def _resolve_pair(cfg, pair_name):
+    """Return (broker_symbol, smt_broker_symbol, magic) for the chosen pair."""
+    idx, pair, names = _pair_entry(cfg, pair_name)
     smt_path = (pair.get("smt") or {}).get("path", "")
     smt_name = next((n for n in names if n != pair_name and n in smt_path), None)
-    return (pair_name + suffix,
-            (smt_name + suffix) if smt_name else None,
-            int(live["magic"]) + idx)
+    smt_sym = _broker_symbol(cfg, _pair_entry(cfg, smt_name)[1]) if smt_name else None
+    return (_broker_symbol(cfg, pair), smt_sym, int(cfg["live"]["magic"]) + idx)
 
 
 def run(cfg, pair="EURUSD", dry_run=False, allow_live=False):
@@ -294,10 +304,16 @@ def run(cfg, pair="EURUSD", dry_run=False, allow_live=False):
     from fxbot.data import PIP
     from fxbot.risk import RiskManager
 
+    from fxbot.backtest import instrument_pip, pair_config
+
     symbol, smt_symbol, magic = _resolve_pair(cfg, pair)
-    cfg = dict(cfg)
+    cfg = pair_config(cfg, _pair_entry(cfg, pair)[1])     # this market's strategies/costs/timeframe
     cfg["live"] = dict(cfg["live"], symbol=symbol, magic=magic)
-    log.info("Pair %s -> symbol=%s smt=%s magic=%d", pair, symbol, smt_symbol, magic)
+    pip = instrument_pip(cfg)
+    warmup_days = int(cfg.get("warmup_days", 0))
+    log.info("Pair %s -> symbol=%s smt=%s magic=%d timeframe=%s strategies=%s",
+             pair, symbol, smt_symbol, magic, cfg["data"]["timeframe"],
+             [s["name"] for s in cfg["strategies"]["morning"]])
 
     consecutive_failures = 0
     while True:
@@ -315,11 +331,17 @@ def run(cfg, pair="EURUSD", dry_run=False, allow_live=False):
             # Fresh strategy objects every (re)connect, then replay today's
             # closed bars so ranges / sweeps / trades_today are rebuilt.
             morning = _build_morning(cfg)
-            risk = RiskManager(cfg["risk"], PIP)
+            r_cfg = dict(cfg["risk"])
+            if "min_units" in cfg.get("instrument", {}):
+                r_cfg["min_units"] = cfg["instrument"]["min_units"]
+            risk = RiskManager(r_cfg, pip)
             now_local = datetime.now(timezone.utc).astimezone(LONDON)
             day_start_utc = now_local.replace(hour=0, minute=0, second=0,
                                               microsecond=0).astimezone(timezone.utc)
-            bars = _fetch_completed_bars(mt5, symbol, smt_symbol, cfg, day_start_utc)
+            # Strategies that need history (gold trend: 55-day channel) replay
+            # `warmup_days` of closed bars first; the London stack replays today only.
+            replay_from = day_start_utc - timedelta(days=warmup_days)
+            bars = _fetch_completed_bars(mt5, symbol, smt_symbol, cfg, replay_from)
             replay = _NoOrderBroker(broker)
             risk.new_day(broker.equity())
             fired_day, cur_day, last_ts = None, None, None

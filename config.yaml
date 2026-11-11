@@ -171,6 +171,37 @@ pairs:
       source_tz: "UTC"
       timeframe: 5min
 
+  # --- Gold: its own strategy (daily trend following), not the London stack ---
+  # Arsenal research Nov 2026 (run_arsenal.py): London stack loses on gold; daily
+  # Donchian trend following (buy-only) is the best gold strategy found:
+  # 2021-25 +14.9%, max DD -4.3%, PF 3.55 at 1% risk, $0.80 spread, -6.5%/yr long financing.
+  - symbol: XAUUSD
+    broker_symbol: XAUUSD        # FOREX.com gold has NO trailing dot
+    spread_pips: 8.0             # $0.80 (pip = $0.10), measured on the demo Nov 2026
+    instrument:
+      pip: 0.1
+      min_units: 1               # units = ounces; FOREX.com: 1 lot = 1 oz, min 0.1 lot
+    data:
+      path: data/XAUUSD_M1_histdata.csv
+      source_tz: "UTC"
+      timeframe: 1h              # decides once per day; 1h bars for stops/trailing
+    costs:                       # gold financing ~ % of position value (demo shows 0; estimate)
+      swap_long_per_lot: 0.0
+      swap_short_per_lot: 0.0
+      swap_long_pct: -6.5
+      swap_short_pct: -1.5
+    warmup_days: 120             # live: replay ~120 days at startup to rebuild the 55-day channel
+    strategies:
+      morning:
+        - name: trend_follow
+          signal: donchian
+          entry_days: 55         # buy when a daily close beats the highest high of 55 days
+          exit_days: 20          # sell when a daily close drops below the 20-day low
+          atr_days: 20
+          stop_atr: 2.0          # stop 2x daily ATR below entry, then trails the best price
+          long_only: true        # shorts on gold lost money in every test
+      afternoon: []
+
   # AUDUSD tested Nov 2026 with unchanged params: 2021-23 +0.0%, 2024-25 +5.1%,
   # breakeven at 1.5-pip spread. Adds ~1%/yr but raises max DD -10.6% -> -13.4%.
   # Left disabled. Uncomment to include (no SMT partner -> SMT filter passes).

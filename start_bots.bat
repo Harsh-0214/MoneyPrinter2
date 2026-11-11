@@ -14,3 +14,5 @@ if errorlevel 1 (
 start "fxbot EURUSD" cmd /k ""%~dp0run_forever.bat" EURUSD"
 timeout /t 3 /nobreak >nul
 start "fxbot GBPUSD" cmd /k ""%~dp0run_forever.bat" GBPUSD"
+timeout /t 3 /nobreak >nul
+start "fxbot XAUUSD" cmd /k ""%~dp0run_forever.bat" XAUUSD"

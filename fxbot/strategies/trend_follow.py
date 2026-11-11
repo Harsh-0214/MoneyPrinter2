@@ -52,6 +52,8 @@ class TrendFollow:
         self.cur_key = None
         self.cur = None                     # [high, low, close] of the forming day
         self.trail_ext = None               # best price since entry (for trailing)
+        self.pending, self.pending_atr = 0, None   # today's entry signal (valid all day)
+        self.last_sig, self.last_atr = 0, None
 
     # ---------------- daily bar building ----------------
     @staticmethod
@@ -125,16 +127,26 @@ class TrendFollow:
             self.cur[2] = bar.close
 
         pos = broker.position()
-        if pos is not None and manages(pos, NAME):
+        if pos is None:
+            self.trail_ext = None
+        if pos is not None and manages(pos, NAME) and bar.Index >= pos.entry_time:
+            # only bars AFTER entry count (a startup replay also feeds older bars)
             if pos.side == 1:
                 self.trail_ext = max(self.trail_ext or pos.entry_price, bar.high)
             else:
                 self.trail_ext = min(self.trail_ext or pos.entry_price, bar.low)
         if not new_day:
+            # Entry signal stays valid for the whole day, so a bot (re)started
+            # after the day's first bar still takes it. Backtests: unchanged,
+            # the first bar of the day already fires.
+            if pos is None and self.pending:
+                return self._entry(self.pending, self.pending_atr, bar, broker, risk)
             return None
 
         sig = self._signal()          # always evaluated so EMA state stays current
         atr = self._atr()
+        self.pending, self.pending_atr = 0, None
+        self.last_sig, self.last_atr = sig, atr
         if pos is not None:
             if not manages(pos, NAME):
                 return None
@@ -156,6 +168,10 @@ class TrendFollow:
             return None
         if (sig == 1 and self.short_only) or (sig == -1 and self.long_only):
             return None
+        self.pending, self.pending_atr = sig, atr
+        return self._entry(sig, atr, bar, broker, risk)
+
+    def _entry(self, sig, atr, bar, broker, risk) -> Optional[TradeProposal]:
         spread = bar.spread_pips * self.pip
         entry = bar.close + (spread if sig == 1 else 0.0)
         stop = entry - sig * self.stop_atr * atr
@@ -171,7 +187,37 @@ class TrendFollow:
                              self.score, NAME)
 
     def mark_fired(self):
-        pass
+        self.pending = 0
+
+    def describe(self, local_min=None):
+        """Chart overlay: entry channel, exit channel, trailing stop, status."""
+        out = {"lines": [], "boxes": [], "status": ""}
+        d = list(self.days)
+        if len(d) < self.entry_days + 1:
+            out["status"] = f"Trend: warming up ({len(d)}/{self.entry_days + 1} days of history)"
+            return out
+        win = d[-self.entry_days:]
+        hi, lo = max(h for h, _, _ in win), min(l for _, l, _ in win)
+        out["lines"] += [
+            {"price": hi, "label": f"{self.entry_days}-day high: close above -> BUY", "color": "seagreen", "style": "dash"},
+            {"price": lo, "label": f"{self.entry_days}-day low: close below -> SELL", "color": "orangered", "style": "dash"},
+        ]
+        if self.long_only:
+            out["lines"].pop()
+        if self.exit_days and len(d) >= self.exit_days:
+            xw = d[-self.exit_days:]
+            out["lines"].append({"price": min(l for _, l, _ in xw), "color": "dimgray", "style": "dot",
+                                 "label": f"{self.exit_days}-day low (long exit)"})
+        if self.trail_ext is not None and self.last_atr:
+            out["status"] = (f"Trend: IN TRADE - best price {self.trail_ext:.2f}, stop trails "
+                             f"{self.stop_atr:g}x daily range ({self.stop_atr * self.last_atr:.2f}) behind it")
+        elif self.pending:
+            out["status"] = f"Trend: {'BUY' if self.pending == 1 else 'SELL'} signal today - entering"
+        else:
+            last = d[-1][2]
+            out["status"] = (f"Trend: waiting - last daily close {last:.2f}; buy above {hi:.2f}"
+                             + ("" if self.long_only else f", sell below {lo:.2f}"))
+        return out
 
     def on_bar(self, bar, local_day, local_min, broker, risk):
         p = self.propose(bar, local_day, local_min, broker, risk)

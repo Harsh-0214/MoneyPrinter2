@@ -1,10 +1,21 @@
-# MoneyPrinter2 — London Session FX Bot (EURUSD + GBPUSD)
+# MoneyPrinter2 — FX + Gold Trading Bot for MetaTrader 5
 
-Automated intraday trading bot for MetaTrader 5 (FOREX.com demo, Canada).
-It runs two strategies on the London open using 5-minute bars, on EURUSD and
-GBPUSD. Each pair uses the other one as its SMT confirmation feed.
+Automated trading bot for MetaTrader 5 (FOREX.com demo, Canada, CAD account).
+Three bots run side by side, one per market:
 
-## Honest results (2021–2025, 0.5% risk per trade)
+| Bot | Strategy | Bars | Trades/yr | When it trades |
+|---|---|---|---|---|
+| **EURUSD** | London Sweep + Breakout, daily trend filter | 5 min | ~27 | 08:00–11:00 London, exits 16:00 |
+| **GBPUSD** | same (EURUSD and GBPUSD are each other's SMT check) | 5 min | ~38 | same |
+| **XAUUSD** | Daily trend following (55-day breakout, buy-only) | 1 h | ~5 | decides daily, holds for weeks |
+
+**Portfolio backtest, 2021–2025, 1% risk per trade, real spreads:**
+**+45.2% (7.8%/yr), max drawdown −11.1%, PF 1.42**.
+By year: +11.8 · +11.0 · −0.1 · −1.5 · +19.0. This is a backtest, not a promise;
+see the caveats under "Strategy arsenal". A step-by-step guide is in
+**`docs/MoneyPrinter2_Guide.pdf`**.
+
+## Honest results (2021–2025): EUR + GBP stack
 
 Validated with `python run_validate.py`. Parameters were chosen on the full
 2021–2025 data, so the in-sample/out-of-sample split below is a sanity check,
@@ -191,8 +202,21 @@ setup. The highest-scoring proposal takes the one trade slot per pair per day
 
 All positions close at **16:00 London** if still open.
 
+### 3. Gold daily trend following (XAUUSD only)
+- **Entry:** at the start of each London day, if yesterday's close was above the
+  highest high of the previous 55 days, buy. It's buy-only, because shorts lost money in every test.
+- **Stop:** 2× the 20-day average daily range below entry. It then trails 2× ATR
+  behind the best price reached, and never loosens.
+- **Exit:** the trailing stop, or a daily close below the 20-day low.
+- **Holding:** days to weeks, so overnight financing applies (modelled at −6.5%/yr on longs).
+- **Restarts:** the bot replays ~120 days of hourly bars at startup to rebuild the
+  channel. A signal stays valid all day, so a restart doesn't miss it.
+
 ### Position sizing
-Each trade risks 0.5% of equity: `units = equity × 0.005 / stop distance`.
+Each trade risks 1% of equity (`risk.risk_per_trade_pct`), measured on
+`live.equity_cap` (50,000) and converted to the account currency (CAD) with
+MT5's own rate: `units = equity × 1% / (stop distance × USD→CAD)`.
+For gold, units are ounces (1 lot = 1 oz on FOREX.com).
 A 2% daily loss stops new entries for the rest of the day.
 
 ---
@@ -205,38 +229,51 @@ python -m venv venv
 venv\Scripts\activate
 pip install -r requirements.txt
 copy .env.example .env          # fill in MT5 login, password, server, terminal path
-python -m pytest -q             # 40 tests
+python -m pytest -q             # 51 tests
 python run_backtest.py --synthetic   # random data: should lose ~the spread
 ```
 
 ## Data
 - **histdata.com** (used for backtests): put the M1 CSVs in `data/histdata/`, then run
-  `python combine_histdata.py --symbol EURUSD` and `--symbol GBPUSD`.
+  `python combine_histdata.py --symbol EURUSD`, `--symbol GBPUSD` and `--symbol XAUUSD`.
 - **Dukascopy** (any USD-quoted pair):
   `python download_dukascopy.py --instrument AUDUSD` → `data/AUDUSD_M1_duka.csv`
 - **MetaTrader 5:** `python fetch_mt5_data.py --start 2021-01-01 --end 2025-12-31`
 
-Pairs must be USD-quoted (XXX/USD). The simulator books PnL in the quote currency.
+Markets must be USD-quoted (EURUSD, GBPUSD, AUDUSD, XAUUSD). The simulator books
+P&L in USD; the live bot converts to the account currency. Non-FX instruments set
+`instrument: {pip, min_units}` on their `pairs:` entry (gold: pip 0.1, 1 oz).
 
 ## Backtest & validation
 ```
 python run_validate.py            # walk-forward + per-year + robustness grid (~10 min)
 python run_validate.py --only walk
 python run_consistency.py tiny_range_fade   # per-year grid for one strategy (also london_close_reversal, london_close_follow, trend_donchian, trend_turtle, trend_ema; --no-swap, --spread)
+python run_arsenal.py             # every strategy x every market, per year (~20 min)
 python run_backtest.py            # single-pair run, writes results/trades.csv, equity.png
 ```
 `run_validate.py` caches resampled bars in `data/cache/`, so reruns are fast.
 
 ## Run live (demo)
 ```
-python run_live.py --pair EURUSD --dry-run     # log only
-python run_live.py --pair EURUSD               # demo orders
-python run_live.py --pair GBPUSD               # second process for the second pair
+start_bots.bat                                 # MT5 + all three bots, auto-restart on crash
+stop_bots.bat                                  # stop the bots (positions are left alone)
+python run_live.py --pair XAUUSD --dry-run     # one bot, log only
+python run_report.py                           # demo results vs backtest expectations
 ```
-- Runs the same strategy stack and routing as the backtest, with the partner pair as the SMT feed.
-- Only closed 5-minute bars are used. Missed bars are caught up, and today's bars
-  are replayed on startup and after every reconnect.
-- Each pair gets its own magic number (`live.magic` + index in `pairs`).
+- Each bot runs its market's strategies exactly like the backtest (`route_morning`).
+  EURUSD and GBPUSD use each other as the SMT feed.
+- Only closed bars are used. Missed bars are caught up. On startup and after every
+  reconnect the bot replays today's bars (or `warmup_days` of history for gold).
+- Each pair has its own magic number (`live.magic` + its index in `pairs`:
+  EURUSD 12345, GBPUSD 12346, XAUUSD 12347).
+- A second copy for the same pair refuses to start, so trades can't be doubled.
+- **Chart overlay:** attach the `FxbotOverlay` indicator (in `mt5/`, installed and
+  compiled into MT5) to a chart. It draws the lines each bot is watching, plus a status panel.
+- **Logs:** `logs/live_<PAIR>_<date>.log`, with `STATUS` lines (what the bot sees),
+  `ORDER` / `Order filled`, `Stop moved`, and `CLOSED` lines with P/L.
+- **24/7:** `start_bots.bat` at Windows login (Task Scheduler), the PC set never
+  to sleep on AC power, and MT5 set to remember its password.
 - A real-money account needs both `--allow-live` and `live.allow_live: true`.
 
 ## Project layout
@@ -245,15 +282,23 @@ config.yaml              every parameter
 run_backtest.py          single-pair backtest
 run_validate.py          multi-pair walk-forward + robustness
 run_consistency.py       year-by-year grid for a single strategy
+run_arsenal.py           every strategy x every market (research)
 run_live.py              live/demo runner (one process per pair)
+run_report.py            demo results vs backtest expectations
+start_bots.bat / run_forever.bat / stop_bots.bat   24/7 launchers
+mt5/FxbotOverlay.mq5     MT5 chart indicator (draws what the bot sees)
+docs/MoneyPrinter2_Guide.pdf   how everything works
 download_dukascopy.py    M1 data for any USD-quoted pair
 combine_histdata.py      merge histdata.com CSVs
 fxbot/
   backtest.py            engine, route_morning(), metrics, multi-pair
   data.py  risk.py
   brokers/  sim_broker.py  mt5_broker.py  base.py
-  strategies/  london_sweep.py  london_breakout.py  (+ trend_follow, tiny_range_fade, london_close_reversal, ny_breakout, prev_day, mean_reversion: tested, unused)
-tests/                   40 unit tests
+  overlay.py             writes the chart-overlay file for MT5
+  strategies/  london_sweep.py  london_breakout.py  trend_follow.py (gold)
+               (+ opening_range, trend_pullback, key_levels, tiny_range_fade,
+                  london_close_reversal, ny_breakout, prev_day, mean_reversion: tested, unused)
+tests/                   51 unit tests
 ```
 
 ## Simulator assumptions (deliberately pessimistic)

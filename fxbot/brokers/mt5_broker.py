@@ -35,6 +35,9 @@ class MT5Broker(Broker):
         live = cfg["live"]
         self._symbol = live["symbol"]
         self._magic = int(live["magic"])
+        # Instrument: pip size (FX 0.0001, gold 0.1). Contract size comes from MT5
+        # (EURUSD 100,000 units per lot, FOREX.com XAUUSD 1 oz per lot).
+        self._pip = float(cfg.get("instrument", {}).get("pip", PIP))
         self._commission_per_lot = float(
             cfg["costs"].get("commission_per_lot_per_side", 0.0)
         )
@@ -87,7 +90,7 @@ class MT5Broker(Broker):
             side = 1 if p.type == mt5.ORDER_TYPE_BUY else -1
             return Position(
                 side=side,
-                units=round(p.volume * LOT),
+                units=round(p.volume * self._contract()),
                 entry_price=p.price_open,
                 # MT5 position times are server time encoded as epoch -> real UTC
                 entry_time=server_ts_to_utc([p.time])[0],
@@ -120,8 +123,8 @@ class MT5Broker(Broker):
             "volume": lots,
             "type": order_type,
             "price": price,
-            "sl": order.stop_loss,
-            "tp": order.take_profit or 0.0,
+            "sl": round(order.stop_loss, info.digits),
+            "tp": round(order.take_profit, info.digits) if order.take_profit else 0.0,
             "deviation": 20,
             "magic": self._magic,
             "comment": order.tag,
@@ -212,6 +215,11 @@ class MT5Broker(Broker):
         ticket = self._my_ticket()
         if ticket is None:
             return
+        info = mt5.symbol_info(self._symbol)
+        if info is not None:
+            new_stop_price = round(new_stop_price, info.digits)
+            if abs(new_stop_price - pos.stop_loss) < info.point / 2:
+                return                                   # unchanged after rounding
         request = {
             "action": mt5.TRADE_ACTION_SLTP,
             "symbol": self._symbol,
@@ -230,18 +238,27 @@ class MT5Broker(Broker):
     def quote_to_account(self) -> float:
         """Account-currency value of a 1.0 price move per 1 unit traded.
 
-        For a CAD account trading EURUSD this is ~USDCAD (~1.40). Uses MT5's own
-        tick value, so it is correct for any account currency.
+        For a CAD account trading EURUSD or gold this is ~USDCAD (~1.42). Uses
+        MT5's own profit calculator (tick_value is wrong for FOREX.com gold).
         """
         info = mt5.symbol_info(self._symbol)
-        if info is None or not info.trade_tick_size or not info.trade_contract_size:
+        tick = mt5.symbol_info_tick(self._symbol)
+        if info is None or tick is None or not info.trade_contract_size:
             return 1.0
-        v = info.trade_tick_value / info.trade_tick_size / info.trade_contract_size
-        return v if v > 0 else 1.0
+        p = mt5.order_calc_profit(mt5.ORDER_TYPE_BUY, self._symbol, 1.0, tick.ask, tick.ask + 1.0)
+        if p is None or p <= 0:
+            if not info.trade_tick_size:
+                return 1.0
+            p = info.trade_tick_value / info.trade_tick_size
+        return p / info.trade_contract_size
 
     def current_spread_pips(self) -> float:
         tick = mt5.symbol_info_tick(self._symbol)
-        return (tick.ask - tick.bid) / PIP
+        return (tick.ask - tick.bid) / self._pip
+
+    def _contract(self) -> float:
+        info = mt5.symbol_info(self._symbol)
+        return float(info.trade_contract_size) if info and info.trade_contract_size else float(LOT)
 
     # ------------------------------------------------------------------
     # Additional methods
@@ -272,7 +289,7 @@ class MT5Broker(Broker):
 
             exit_deal = exits[-1]
             side = 1 if entry.type == mt5.DEAL_TYPE_BUY else -1
-            units = round(entry.volume * LOT)
+            units = round(entry.volume * self._contract())
             total_commission = sum(d.commission for d in ds)
             total_pnl = sum(d.profit for d in ds) + total_commission
 
@@ -323,7 +340,7 @@ class MT5Broker(Broker):
     def _to_lots(self, units: int, symbol_info) -> float:
         """Convert integer units to a valid lot size for this symbol."""
         step = symbol_info.volume_step
-        lots = round(units / LOT / step) * step
+        lots = round(units / self._contract() / step) * step
         lots = max(symbol_info.volume_min, min(symbol_info.volume_max, lots))
         return round(lots, 8)
 

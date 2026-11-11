@@ -64,21 +64,20 @@ def load_pairs(cfg):
 
 def run_multi(pair_bars, cfg, start=None, end=None, symbols=None):
     """Run every pair independently on the same equity base and combine PnL."""
+    from fxbot.backtest import pair_config
     start_eq = cfg["account"]["starting_equity"]
-    c = copy.deepcopy(cfg)
-    c["smt"] = {}                      # SMT columns are already merged in
+    pairs = {p["symbol"]: p for p in cfg.get("pairs", [])}
     trades_all, pnl = [], None
-    pair_spread = {p["symbol"]: p.get("spread_pips") for p in cfg.get("pairs", [])}
     for sym, bars in pair_bars.items():
         if symbols and sym not in symbols:
             continue
         b = filter_dates(bars, start, end)
         if len(b) == 0:
             continue
-        cp = c
-        if pair_spread.get(sym) is not None and not cfg.get("_force_spread"):
-            cp = copy.deepcopy(c)
-            cp["costs"]["spread_pips"] = pair_spread[sym]
+        cp = pair_config(cfg, pairs.get(sym, {"symbol": sym}))
+        cp["smt"] = {}                 # SMT columns are already merged in
+        if cfg.get("_force_spread") and "instrument" not in pairs.get(sym, {}):
+            cp["costs"]["spread_pips"] = cfg["costs"]["spread_pips"]   # FX stress test
         t, eq = run_backtest(b, cp)
         if len(t):
             t = t.copy()
@@ -146,7 +145,7 @@ def walk_forward(pair_bars, cfg):
     for label, s, e in [("IN-SAMPLE 2021-2023", "2021-01-01", "2023-12-31"),
                         ("OUT-OF-SAMPLE 2024-2025", "2024-01-01", "2025-12-31"),
                         ("FULL 2021-2025", None, None)]:
-        for syms, name in [(None, "combined"), (["EURUSD"], "EURUSD"), (["GBPUSD"], "GBPUSD")]:
+        for syms, name in [(None, "combined")] + [([p], p) for p in pair_bars]:
             t, eq = run_multi(pair_bars, cfg, s, e, syms)
             rows.append({"period": label, "pairs": name, **summarize(t, eq, se)})
     df = pd.DataFrame(rows)

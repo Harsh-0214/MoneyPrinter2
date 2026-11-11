@@ -79,6 +79,28 @@ def _load_smt_pair(smt_cfg, main_df):
     return main_df
 
 
+PAIR_OVERRIDES = ("strategies", "instrument", "slot_max_trades", "warmup_days")
+
+
+def pair_config(cfg, pair):
+    """Config for one market: global settings + that pair's overrides.
+
+    A pair entry may override: strategies (its own stack), instrument (pip,
+    min_units), costs (merged), spread_pips, slot_max_trades, warmup_days, data.
+    Pairs without overrides run the global strategy stack (EURUSD, GBPUSD).
+    """
+    c = copy.deepcopy(cfg)
+    c["data"] = dict(cfg.get("data", {}), **pair.get("data", {}))
+    c["smt"] = pair.get("smt", {})
+    c["costs"] = dict(cfg["costs"], **pair.get("costs", {}))
+    if pair.get("spread_pips") is not None:
+        c["costs"]["spread_pips"] = pair["spread_pips"]
+    for k in PAIR_OVERRIDES:
+        if k in pair:
+            c[k] = copy.deepcopy(pair[k])
+    return c
+
+
 def instrument_pip(cfg):
     """Pip size for the instrument being run (0.0001 FX default; e.g. 0.1 for gold)."""
     return float(cfg.get("instrument", {}).get("pip", PIP))
@@ -326,15 +348,11 @@ def run_backtest_multi_pair(cfg):
             print(f"[multi-pair] {data_cfg['path']} not found — skipping {symbol}")
             continue
 
-        pair_cfg = copy.deepcopy(cfg)
-        pair_cfg["data"] = dict(data_cfg)
+        pair_cfg = pair_config(cfg, pair)
         if start:
             pair_cfg["data"]["start"] = start
         if end:
             pair_cfg["data"]["end"] = end
-        pair_cfg["smt"] = pair.get("smt", {})
-        if pair.get("spread_pips") is not None:
-            pair_cfg["costs"]["spread_pips"] = pair["spread_pips"]
 
         raw = load_csv(pair_cfg["data"]["path"], pair_cfg["data"]["source_tz"])
         bars = resample(raw, pair_cfg["data"]["timeframe"])
