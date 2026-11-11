@@ -563,7 +563,7 @@ def _label(unit_cfg):
     for s in specs:
         lab = STRATEGY_LABELS.get(s["name"], s["name"])
         if s["name"] == "trend_follow":
-            lab = f"Trend {s.get('entry_days', 55)}d"
+            lab = f"Trend {s.get('entry_days', 55)}d" + (" add-on" if s.get("add_on_r") else "")
         if lab not in names:
             names.append(lab)
     return "+".join(names)
