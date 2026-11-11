@@ -10,6 +10,7 @@ config.local.yaml
 config_v*.yaml
 data/histdata/
 data/cache/
+data/news/live_calendar*
 *.pyc
 *.pyo
 .DS_Store

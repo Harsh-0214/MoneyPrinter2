@@ -30,7 +30,19 @@ risk:
   max_leverage: 10            # hard cap on position notional / equity
   min_units: 1000             # size is rounded down to micro lots (1,000 units)
   news_file: null             # optional CSV of high-impact news times (UTC), column "time"
+                              #   (legacy; applies to every market, honoured even with news_filter off)
+  # --- high-impact news filter (fxbot/news.py). Blocks NEW entries only; open trades stay.
+  news_filter: true           # ON (Nov 2026, run_news_test.py): +-30 min cost 0.3% of 69.4% over
+                              #   2021-25 and left max DD unchanged, so it's a cheap guard against
+                              #   news spikes the simulator doesn't model. +-60 min: +67.0%;
+                              #   +-120 min: +62.2% and DD -11.9%; skipping NFP/FOMC days: +62.8%
+                              #   with DD -7.0% (rejected: costs 6.6% and was 1 of 7 variants tried)
   news_blackout_minutes: 30   # no new entries this many minutes either side of news
+  news_currencies: auto       # auto: EURUSD -> USD+EUR, GBPUSD -> USD+GBP, XAUUSD -> USD
+                              #   (or a list, e.g. [USD], per pair via `risk:` under the pair)
+  news_day_block: []          # event-name keywords whose whole London day is skipped, e.g. [payrolls, fomc]
+  news_calendar: data/news/high_impact_2021_2025.csv   # backtests (build_news_calendar.py)
+  news_refresh_hours: 4       # live: Forex Factory weekly feed, cached in data/news/
 
 # ---------------------------------------------------------------
 #  Multi-strategy morning stack with scored proposal routing

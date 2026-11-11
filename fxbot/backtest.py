@@ -125,6 +125,10 @@ def pair_config(cfg, pair):
     c["costs"] = dict(cfg["costs"], **pair.get("costs", {}))
     if pair.get("spread_pips") is not None:
         c["costs"]["spread_pips"] = pair["spread_pips"]
+    if "risk" in cfg or "risk" in pair:
+        c["risk"] = dict(cfg.get("risk", {}), **pair.get("risk", {}))   # e.g. per-pair news_currencies
+    if pair.get("symbol"):
+        c["symbol"] = pair["symbol"]                        # news filter: which currencies matter
     for k in PAIR_OVERRIDES:
         if k in pair:
             c[k] = copy.deepcopy(pair[k])
@@ -241,7 +245,7 @@ def run_backtest(df, cfg, strategy_cls=None):
     r_cfg = dict(cfg["risk"])
     if "min_units" in cfg.get("instrument", {}):          # e.g. gold: 1 oz, FX: 1,000 units
         r_cfg["min_units"] = cfg["instrument"]["min_units"]
-    risk = RiskManager(r_cfg, pip)
+    risk = RiskManager(r_cfg, pip, cfg.get("symbol"))
 
     equity = np.empty(len(df))
     slot_limit = int(cfg.get("slot_max_trades", 1))   # trades the morning slot may open per day

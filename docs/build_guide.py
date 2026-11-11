@@ -516,6 +516,11 @@ def build():
         "Closes positions by ticket, which is required on your hedging-mode account. Without this, a close "
         "would open an opposite trade instead.",
         "Daily loss limit, leverage cap, and the CAD conversion so the risk is what it says.",
+        "<b>News filter:</b> no new trades 30 minutes either side of high-impact news for that "
+        "market's currencies (EURUSD: USD and EUR, GBPUSD: USD and GBP, gold: USD). The bot reads "
+        "the Forex Factory weekly calendar every 4 hours and caches it. If the download fails it "
+        "keeps the last copy. Open trades are not closed. Skips are logged as NEWS: skipping entry. "
+        "Backtest cost: 69.4% to 69.1% over 2021-2025, same drawdown.",
     ])
     s.append(Spacer(1, 10))
     s.append(P("Nothing here is financial advice. Backtests describe the past under assumptions; "

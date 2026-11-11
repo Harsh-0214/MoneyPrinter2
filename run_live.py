@@ -381,9 +381,12 @@ class StrategyRunner:
     same time as the market's other strategies. The market bot runs all of them in
     one loop; each one only trades when its own setup appears."""
 
-    def __init__(self, full_cfg, unit, symbol, smt_symbol, all_magics, dry_run, allow_live):
+    def __init__(self, full_cfg, unit, symbol, smt_symbol, all_magics, dry_run, allow_live,
+                 news=None):
         from fxbot.backtest import instrument_pip, pair_config
         self.unit, self.symbol, self.smt_symbol = unit, symbol, smt_symbol
+        self.news = news                      # LiveCalendar shared by the market's runners (or None)
+        self._news_logged = set()
         self.all_magics, self.dry_run, self.allow_live = all_magics, dry_run, allow_live
         self.cfg = pair_config(full_cfg, unit)
         self.cfg["live"] = dict(self.cfg["live"], symbol=symbol, magic=unit["magic"])
@@ -419,7 +422,8 @@ class StrategyRunner:
         r_cfg = dict(cfg["risk"])
         if "min_units" in cfg.get("instrument", {}):
             r_cfg["min_units"] = cfg["instrument"]["min_units"]
-        self.risk = RiskManager(r_cfg, self.pip)
+        self.risk = RiskManager(r_cfg, self.pip, self.unit.get("symbol"))
+        self._apply_news()
         now_local = datetime.now(timezone.utc).astimezone(LONDON)
         self.day_start_utc = now_local.replace(hour=0, minute=0, second=0,
                                                microsecond=0).astimezone(timezone.utc)
@@ -440,6 +444,7 @@ class StrategyRunner:
             for s in self.morning:
                 s.mark_fired()
         self.risk.quote_to_account = self.real_broker.quote_to_account()
+        self.risk.on_news_skip = self._log_news_skip       # after replay: only live skips are logged
         self.log.info("ready: magic=%d timeframe=%s replayed=%d bars, last=%s, position=%s",
                       self.unit["magic"], cfg["data"]["timeframe"],
                       0 if bars is None else len(bars), self.last_ts,
@@ -447,9 +452,29 @@ class StrategyRunner:
         self.last_status = _log_status_changes(self.morning, _london_local(datetime.now(timezone.utc))[1],
                                                {}, self.log)
 
+    # ------------------------------------------------------------------ news
+    def _apply_news(self):
+        """Give the RiskManager the latest live calendar (no-op when the filter is off).
+        Never raises: a broken calendar must not stop trading."""
+        if self.news is None:
+            return
+        try:
+            self.risk.set_news(self.news.refresh())
+        except Exception as e:
+            self.log.warning("NEWS: could not apply calendar (%s) - previous calendar kept", e)
+
+    def _log_news_skip(self, ev, t_utc):
+        from fxbot.news import describe_event
+        key = (str(ev.get("time")), ev.get("event"))
+        if key not in self._news_logged:
+            self._news_logged.add(key)
+            self.log.info("NEWS: skipping entry, %s (blackout %d min either side)",
+                          describe_event(ev), self.risk.blackout_ns // 60_000_000_000)
+
     # ------------------------------------------------------------------ each poll
     def step(self, mt5):
         from fxbot.backtest import route_morning
+        self._apply_news()
         since = self.last_ts.to_pydatetime() if self.last_ts is not None else self.day_start_utc
         bars = _fetch_completed_bars(mt5, self.symbol, self.smt_symbol, self.cfg,
                                      since - timedelta(minutes=10))
@@ -485,6 +510,34 @@ class StrategyRunner:
         return [f"STATUS|[{self.label}] {l[7:]}" if l.startswith("STATUS|") else l for l in lines]
 
 
+def make_live_calendar(cfg):
+    """LiveCalendar when risk.news_filter is on, else None."""
+    r = cfg.get("risk", {})
+    if not r.get("news_filter"):
+        return None
+    from fxbot.news import LIVE_URL, LiveCalendar
+    return LiveCalendar(cache_dir=r.get("news_cache_dir", "data/news"),
+                        url=r.get("news_live_url", LIVE_URL),
+                        refresh_hours=float(r.get("news_refresh_hours", 4)))
+
+
+def news_status_line(risk, now_utc):
+    """'NEWS: blackout now - USD US CPI ...' / 'NEWS next: ...' for the overlay, or None."""
+    try:
+        from fxbot.news import describe_event, upcoming
+        if risk is None or len(risk.news_events) == 0:
+            return None
+        ev = risk.news_hit(now_utc)
+        if ev is not None:
+            return f"NEWS: no new entries now - {describe_event(ev)}"
+        nxt = upcoming(risk.news_events, now_utc, hours=24, limit=1)
+        if len(nxt):
+            return f"NEWS next: {describe_event(nxt.iloc[0].to_dict())}"
+    except Exception:
+        pass
+    return None
+
+
 def run(cfg, pair="EURUSD", dry_run=False, allow_live=False, sleeve=None):
     """One bot per market: runs every strategy configured for `pair` (its main
     London/trend stack plus its `sleeves`) in a single loop."""
@@ -497,8 +550,18 @@ def run(cfg, pair="EURUSD", dry_run=False, allow_live=False, sleeve=None):
         raise SystemExit(f"No strategies configured for {pair}{':' + sleeve if sleeve else ''}")
     symbol, smt_symbol, _ = _resolve_pair(cfg, pair)
     all_magics = {u["magic"] for u in expand_units(cfg)}
+    news = make_live_calendar(cfg)
     runners = [StrategyRunner(cfg, u, symbol, None if u["sleeve"] else smt_symbol,
-                              all_magics, dry_run, allow_live) for u in units]
+                              all_magics, dry_run, allow_live, news) for u in units]
+    if news is not None:
+        from fxbot.risk import resolve_news_currencies
+        curr = resolve_news_currencies(runners[0].cfg["risk"].get("news_currencies", "auto"), pair)
+        log.info("NEWS filter ON: no new entries %s min either side of high-impact %s news "
+                 "(live feed, refreshed every %sh)", cfg["risk"].get("news_blackout_minutes", 30),
+                 "/".join(curr or ["all"]),
+                 cfg["risk"].get("news_refresh_hours", 4))
+    else:
+        log.info("NEWS filter off (risk.news_filter: false)")
     cap = cfg["live"].get("equity_cap")
     log.info("%s bot: %d strateg%s - %s | symbol=%s smt=%s | sizing base %s | dry_run=%s",
              pair, len(runners), "y" if len(runners) == 1 else "ies",
@@ -523,6 +586,9 @@ def run(cfg, pair="EURUSD", dry_run=False, allow_live=False, sleeve=None):
                     from fxbot.overlay import write_overlay
                     lines = [f"STATUS|fxbot {pair} | {len(runners)} strategies | "
                              f"updated {time.strftime('%H:%M:%S')}"]
+                    nl = news_status_line(runners[0].risk, datetime.now(timezone.utc))
+                    if nl:
+                        lines.append(f"STATUS|{nl}")
                     for r in runners:
                         lines += r.overlay_lines()
                     write_overlay(overlay_path, lines)

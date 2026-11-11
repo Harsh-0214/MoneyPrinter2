@@ -20,7 +20,8 @@ strategy is a `sleeves:` item under it. Adding a strategy to a market means addi
 
 **Portfolio backtest, 2021–2025, 1% risk per trade, real spreads:**
 **+69.4% (11.2%/yr), max drawdown −9.7%, PF 1.54, no losing year.**
-By year: +12.6 · +13.1 · +0.2 · +4.3 · +27.3. The three newest strategies were
+By year: +12.6 · +13.1 · +0.2 · +4.3 · +27.3 (with the ±30-min news filter, now on:
++69.1%, same drawdown; see "High-impact news filter"). The three newest strategies were
 picked from 54 candidates, so expect live results to be somewhat lower. This is a
 backtest, not a promise; see the caveats under "Strategy arsenal". All bots
 together never risk more than `live.max_open_risk_pct` (5%) at once.
@@ -277,7 +278,7 @@ python -m venv venv
 venv\Scripts\activate
 pip install -r requirements.txt
 copy .env.example .env          # fill in MT5 login, password, server, terminal path
-python -m pytest -q             # 53 tests
+python -m pytest -q             # 72 tests
 python run_backtest.py --synthetic   # random data: should lose ~the spread
 ```
 
@@ -343,20 +344,60 @@ mt5/FxbotOverlay.mq5     MT5 chart indicator (draws what the bot sees)
 docs/MoneyPrinter2_Guide.pdf   how everything works
 download_dukascopy.py    M1 data for any USD-quoted pair
 combine_histdata.py      merge histdata.com CSVs
+build_news_calendar.py   builds data/news/high_impact_2021_2025.csv
+run_news_test.py         news-filter backtest comparison
 fxbot/
   backtest.py            engine, route_morning(), metrics, multi-pair
-  data.py  risk.py
+  data.py  risk.py  news.py (news calendar)
   brokers/  sim_broker.py  mt5_broker.py  base.py
   overlay.py             writes the chart-overlay file for MT5
   strategies/  london_sweep.py  london_breakout.py  trend_follow.py (gold)  daily_patterns.py (pullback)
                (+ opening_range, trend_pullback, key_levels, tiny_range_fade,
                   london_close_reversal, ny_breakout, prev_day, mean_reversion: tested, unused)
-tests/                   53 unit tests
+tests/                   72 unit tests
 ```
+
+## High-impact news filter (`fxbot/news.py`)
+Blocks **new entries** within `risk.news_blackout_minutes` of a high-impact release for
+the currencies that move that market (EURUSD: USD+EUR, GBPUSD: USD+GBP, XAUUSD: USD;
+`risk.news_currencies: auto`). Open trades are never closed because of news.
+Switch: `risk.news_filter` (**on**, ±30 min, no whole-day skips).
+- **Backtests** use `data/news/high_impact_2021_2025.csv`, built by
+  `python build_news_calendar.py` from official release dates (BLS for NFP/CPI, the Fed,
+  ECB, BoE, ONS, Eurostat flash HICP), with local release times converted to UTC using
+  real DST rules. Only 7 event types (NFP, US CPI, FOMC + press conference, ECB +
+  press conference, BoE, UK CPI, Eurozone flash CPI); PMIs, GDP, retail sales, speeches
+  etc. are missing. UK CPI dates are the least certain.
+- **Live** bots read the public Forex Factory weekly JSON (every "High" event, so more
+  than the backtest covers), refreshed at most every `news_refresh_hours` (4) and cached in
+  `data/news/live_calendar.csv`. A failed download logs a warning and uses the cache, or
+  no filter. Skips are logged as `NEWS: skipping entry, USD CPI m/m at 13:30 UTC ...`, and
+  the chart overlay shows the next event.
+- `python run_news_test.py` reruns the comparison below.
+
+Portfolio backtest 2021–2025 (all 6 strategies, 1% risk), only the news settings changed:
+
+| News setting | 2021 | 2022 | 2023 | 2024 | 2025 | Total | Max DD | PF | Trades |
+|---|---|---|---|---|---|---|---|---|---|
+| No filter (old) | +12.6 | +13.1 | +0.2 | +4.3 | +27.3 | +69.4% | −9.7% | 1.54 | 489 |
+| ±15 min | +12.6 | +13.1 | +0.2 | +4.3 | +27.3 | +69.4% | −9.7% | 1.54 | 489 |
+| **±30 min (live)** | +12.4 | +13.1 | +0.2 | +4.4 | +27.3 | **+69.1%** | **−9.7%** | 1.54 | 488 |
+| ±60 min | +11.5 | +14.1 | −1.0 | +4.4 | +27.0 | +67.0% | −9.8% | 1.53 | 481 |
+| ±120 min | +12.6 | +14.1 | −3.3 | +4.5 | +25.1 | +62.2% | −11.9% | 1.50 | 475 |
+| ±30 min + skip NFP/FOMC days | +10.5 | +10.8 | +2.3 | +3.9 | +25.2 | +62.8% | −7.0% | 1.57 | 443 |
+| ±30 min + skip all event days | +11.0 | +10.1 | +0.7 | +4.9 | +21.4 | +56.8% | −8.0% | 1.60 | 394 |
+
+Why it barely matters: the London entries happen 08:00–11:00 London, and most big
+releases fall outside that window (US data 13:30, BoE 12:00, ECB 13:15, FOMC 19:00).
+The daily strategies decide at midnight. Only Eurozone flash CPI (10:00 London) and UK
+CPI (07:00) are close. ±30 min is kept because it's nearly free, and it guards against the
+spread blowouts and spikes the simulator doesn't model. Skipping NFP/FOMC days cut
+drawdown to −7.0% but cost 6.6 points of return. It was also 1 of 7 variants tried, so
+it wasn't adopted. Turn it on with `news_day_block: [payrolls, fomc]` if you prefer smaller drawdowns.
 
 ## Simulator assumptions (deliberately pessimistic)
 - Signals fill at the next bar's open. Buys pay the ask. The spread widens to 3 pips at NY rollover.
 - Stops fill with slippage, or at the open if price gaps through.
 - If the stop and target are both hit in the same bar, the stop counts.
 - Overnight swap is charged at the 17:00 New York rollover (triple on Wednesday). The intraday stack never pays it.
-- News spikes are not modelled.
+- News spikes are not modelled (the news filter only changes which entries are allowed).
