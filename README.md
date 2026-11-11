@@ -16,13 +16,20 @@ Current config (Nov 2026): skips **Mondays only**, uses the **daily trend filter
 
 | Period | Pairs | Trades | Return | CAGR | Max DD | PF | Win % |
 |---|---|---|---|---|---|---|---|
-| 2021–2023 | EUR + GBP | 169 | +10.25% | 3.3%/yr | -5.15% | 1.41 | 52.1 |
-| 2024–2025 | EUR + GBP | 103 | +3.10% | 1.5%/yr | -5.17% | 1.23 | 47.6 |
-| 2021–2025 | EUR + GBP | 271 | +14.07% | 2.7%/yr | -7.58% | 1.36 | 50.2 |
-| 2021–2025 | EURUSD only | 109 | +4.19% | 0.8%/yr | -5.42% | 1.30 | 48.6 |
-| 2021–2025 | GBPUSD only | 162 | +9.88% | 1.9%/yr | -3.90% | 1.40 | 51.2 |
+| 2021–2023 | EUR + GBP | 205 | +11.61% | 3.8%/yr | -4.18% | 1.37 | 50.7 |
+| 2024–2025 | EUR + GBP | 124 | +1.99% | 1.0%/yr | -6.31% | 1.11 | 46.8 |
+| 2021–2025 | EUR + GBP | 327 | +14.78% | 2.8%/yr | -7.24% | 1.31 | 49.2 |
+| 2021–2025 | EURUSD only | 135 | +4.63% | 0.9%/yr | -5.65% | 1.26 | 47.4 |
+| 2021–2025 | GBPUSD only | 192 | +10.15% | 2.0%/yr | -4.34% | 1.33 | 50.5 |
 
-**By year (combined):** 2021 +5.8% · 2022 +5.4% · 2023 −1.2% · 2024 −2.5% · 2025 +6.1%
+**By year (combined):** 2021 +5.8% · 2022 +5.5% · 2023 0.0% · 2024 −2.5% · 2025 +5.5%
+
+Breakout minimum Asian range = **22 pips** (was 25). With the trend filter on,
+16 / 18 / 20 / 22 / 24 / 25 / 27 / 30 pips gave +11.2 / +9.0 / +13.0 / **+14.8** /
++14.6 / +14.1 / +10.2 / +7.6% over 5 years. 22 adds ~20% more trades (65/yr,
+EURUSD 27/yr). Other ideas for more trades all cost profit: trading Mondays
+(+7.1%), a longer breakout window (+12.4–12.7%), a NY-open Sweep (+5–8%), and a
+lower Sweep R/R (+9.5%).
 
 ### Daily trend filter (higher timeframe)
 Same realistic spreads, both pairs, 2021–2025:
@@ -146,7 +153,7 @@ setup. The highest-scoring proposal takes the one trade slot per pair per day
 08:00–10:30   Note a close beyond range ± 0.5 pip, but don't trade yet
 10:30–11:00   If price is STILL beyond the range (and < 15 pips extended) → enter
 ```
-- **Range filter:** Asian range 25–80 pips
+- **Range filter:** Asian range 22–80 pips
 - **Stop:** opposite side of the Asian range (avg ~45 pips)
 - **Target:** 2R. In practice only ~5% of trades reach it; most close at the session exit.
 - **Breakeven:** stop moves to entry at +1R
