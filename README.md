@@ -322,6 +322,23 @@ python run_report.py                           # demo results vs backtest expect
 - One log per market bot: `logs/live_<PAIR>_<date>.log`. Each line is tagged with the strategy
   (`[London]`, `[Pullback]`, `[Trend 55d]`, `[Trend 20d]`). One chart file per market: `fxbot_<SYMBOL>.txt`.
 - A second copy for the same pair refuses to start, so trades can't be doubled.
+- **Terminal = plain English.** Each market window narrates in short `# ...` lines: startup,
+  what each strategy is waiting for, "wants to SELL ... because ...", safety checks, trade size,
+  fills, stop moves, closes with P/L, skips (news / spread / risk cap) and a daily summary.
+  The technical log stays in the log file (`--verbose` also prints it in the terminal).
+- **Journal:** `logs/journal_<date>.log` collects the important events of all three markets
+  in one file. The FxbotOverlay indicator also prints them into MT5's **Experts** tab
+  (from `fxbot_events_<SYMBOL>.txt`). Orders and fills also appear in MT5's own Journal tab.
+- **Spread guard:** no new entry while the live spread is above `live.max_spread_mult`
+  (2.5×) the pair's normal spread.
+- **Drawdown circuit breaker:** no new trades once the account is `live.max_drawdown_pct`
+  (15% of the sizing base) below its peak. The peak is in `data/state/peak_equity.json`;
+  delete that file to resume after investigating.
+- **Stall watchdog:** if the market is open but no new candles arrive for 20 min
+  (3 h for hourly strategies), the bot reconnects to MT5.
+- **Daily summary** per market at the start of each London day: closed trades, P/L, open trades, equity.
+- **Fresh-data check:** `python run_oos_mt5.py` re-runs the live portfolio on 2026 data from
+  MT5 that was never used for tuning (Jan 1 - Nov 11 2026: +17.0%, PF 2.60, max DD -4.7%).
 - **Chart overlay:** attach the `FxbotOverlay` indicator (in `mt5/`, installed and
   compiled into MT5) to a chart. It draws the lines each bot is watching, plus a status panel.
 - **Logs:** `logs/live_<PAIR>_<date>.log`, with `STATUS` lines (what the bot sees),

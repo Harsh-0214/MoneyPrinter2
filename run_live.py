@@ -28,18 +28,20 @@ load_dotenv()
 LONDON = zoneinfo.ZoneInfo("Europe/London")
 
 
-def _setup_logging(tag):
+def _setup_logging(tag, verbose=False):
+    """Terminal: plain-English narration ('# ...' lines) plus warnings/errors.
+    Log file logs/live_<tag>_<date>.log: everything, technical detail included.
+    --verbose also prints the technical lines in the terminal."""
+    from fxbot import narrate
     Path("logs").mkdir(exist_ok=True)
     today = datetime.now().strftime("%Y%m%d")
-    fmt = "%(asctime)s %(levelname)s %(message)s"
-    logging.basicConfig(
-        level=logging.INFO,
-        format=fmt,
-        handlers=[
-            logging.StreamHandler(),
-            logging.FileHandler(f"logs/live_{tag}_{today}.log"),
-        ],
-    )
+    fh = logging.FileHandler(f"logs/live_{tag}_{today}.log", encoding="utf-8")
+    fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    console = logging.StreamHandler()
+    console.setLevel(logging.INFO if verbose else logging.WARNING)
+    console.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s", "%H:%M:%S"))
+    logging.basicConfig(level=logging.INFO, handlers=[console, fh])
+    narrate.setup(console=True, file_handler=fh)
     return logging.getLogger("fxbot")
 
 
@@ -152,6 +154,124 @@ class PortfolioRiskGuard:
     @property
     def trades(self):
         return self._b.trades
+
+
+class SpreadGuard:
+    """Skips a new entry while the live spread is abnormally wide (news spikes,
+    rollover, thin markets). Limit = live.max_spread_mult x the pair's normal spread."""
+
+    def __init__(self, broker, max_spread_pips, who):
+        self._b, self.max_spread, self.who = broker, max_spread_pips, who
+
+    def submit(self, order):
+        sp = self._b.current_spread_pips()
+        if sp > self.max_spread:
+            from fxbot import narrate
+            log.warning("[%s] SPREAD: %.1f pips > limit %.1f - entry skipped", self.who, sp, self.max_spread)
+            narrate.say("%s skipped a trade: the spread is %.1f pips, too wide (limit %.1f).",
+                        self.who, sp, self.max_spread)
+            return False
+        return self._b.submit(order)
+
+    def equity(self): return self._b.equity()
+    def position(self): return self._b.position()
+    def current_spread_pips(self): return self._b.current_spread_pips()
+    def close_position(self, reason="manual"): return self._b.close_position(reason)
+    def update_stop(self, new_stop_price): return self._b.update_stop(new_stop_price)
+    def shutdown(self): return self._b.shutdown()
+
+    @property
+    def trades(self):
+        return self._b.trades
+
+
+class DrawdownBreaker:
+    """Circuit breaker: once the ACCOUNT has fallen live.max_drawdown_pct (of the
+    sizing base) below its highest equity, no new trades are opened by any bot.
+    Open trades keep their stops. The peak is stored in data/state/peak_equity.json
+    (shared by all bots, survives restarts). To resume after it trips: look into
+    why, then delete that file (or raise the limit) and restart the bots."""
+
+    STATE = Path("data/state/peak_equity.json")
+
+    def __init__(self, broker, mt5, base, max_dd_pct, who):
+        self._b, self.mt5, self.base, self.max_dd, self.who = broker, mt5, base, max_dd_pct, who
+
+    @classmethod
+    def peak(cls):
+        try:
+            import json
+            return float(json.loads(cls.STATE.read_text())["peak"])
+        except Exception:
+            return None
+
+    @classmethod
+    def update_peak(cls, equity):
+        import json
+        p = cls.peak()
+        if p is None or equity > p:
+            cls.STATE.parent.mkdir(parents=True, exist_ok=True)
+            cls.STATE.write_text(json.dumps({"peak": equity, "at": datetime.now().isoformat()}))
+            return equity
+        return p
+
+    def drawdown_pct(self):
+        acct = self.mt5.account_info()
+        p = self.peak()
+        if acct is None or p is None:
+            return 0.0
+        return max(0.0, (p - acct.equity) / self.base * 100)
+
+    def submit(self, order):
+        dd = self.drawdown_pct()
+        if dd >= self.max_dd:
+            from fxbot import narrate
+            log.error("[%s] DRAWDOWN BREAKER: account %.1f%% below its peak (limit %.0f%%) - "
+                      "no new trades. Delete %s to resume.", self.who, dd, self.max_dd, self.STATE)
+            narrate.say("STOPPED NEW TRADES: the account is %.1f%% below its best level (limit %.0f%%). "
+                        "Open trades keep their stops. Check what happened before resuming.",
+                        dd, self.max_dd)
+            return False
+        return self._b.submit(order)
+
+    def equity(self): return self._b.equity()
+    def position(self): return self._b.position()
+    def current_spread_pips(self): return self._b.current_spread_pips()
+    def close_position(self, reason="manual"): return self._b.close_position(reason)
+    def update_stop(self, new_stop_price): return self._b.update_stop(new_stop_price)
+    def shutdown(self): return self._b.shutdown()
+
+    @property
+    def trades(self):
+        return self._b.trades
+
+
+def market_open(now_utc):
+    """FX/gold trading hours, roughly: Sunday 22:00 UTC to Friday 21:00 UTC, minus the
+    daily 21:00-23:00 UTC rollover/maintenance window. Used by the stall watchdog."""
+    wd, h = now_utc.weekday(), now_utc.hour
+    if wd == 5 or (wd == 4 and h >= 21) or (wd == 6 and h < 22):
+        return False
+    return not (21 <= h < 23)
+
+
+def stalled(last_bar_start, timeframe, now_utc):
+    """True if no new closed bar arrived for much longer than expected while the market is open."""
+    import pandas as pd
+    if last_bar_start is None or not market_open(now_utc):
+        return False
+    tf = pd.Timedelta(timeframe)
+    allowed = max(tf * 3, pd.Timedelta(minutes=20))       # 5min bars: 20 min; 1h bars: 3 h
+    now = pd.Timestamp(now_utc)
+    # Just after a reopen (daily 23:00 UTC, or Sunday evening) old bars are normal
+    reopen = now.normalize() + pd.Timedelta(hours=23)
+    if reopen > now:
+        reopen -= pd.Timedelta(days=1)
+    if now.weekday() == 0 or (now.weekday() == 6):
+        reopen = max(reopen, now.normalize() - pd.Timedelta(days=now.weekday() == 0) + pd.Timedelta(hours=22))
+    if now - reopen < allowed + tf:
+        return False
+    return now - (pd.Timestamp(last_bar_start) + tf) > allowed
 
 
 class _NoOrderBroker:
@@ -288,19 +408,24 @@ def _log_status_changes(strategies, local_min, last, logger=None):
     return now
 
 
-def _log_closed_trade(broker, logger=None):
+def _log_closed_trade(broker, logger=None, who=None):
     """A position disappeared (stop / target hit at the broker, or our close)."""
+    from fxbot import narrate
     try:
         trades = broker.trades
     except Exception:
         trades = []
     if not trades:
         (logger or log).info("CLOSED position (no deal details available)")
+        if who:
+            narrate.say("%s trade closed (details are in MT5's History tab).", who)
         return
-    t = trades[-1]
+    t = max(trades, key=lambda x: x.exit_time)          # the most recent close
     (logger or log).info("CLOSED %s %s %d units: entry %.5f -> exit %.5f  P/L %.2f  reason=%s",
              t.tag, "BUY" if t.side == 1 else "SELL", t.units, t.entry_price,
              t.exit_price, t.pnl, t.exit_reason)
+    if who:
+        narrate.closed_trade(who, t)
 
 
 def _overlay_path(mt5, symbol):
@@ -407,11 +532,28 @@ class StrategyRunner:
         cap = cfg["live"].get("equity_cap")
         if cap:
             broker = CappedEquityBroker(broker, cap)
+        from fxbot import narrate
+        base = float(cap or broker.equity())
+        risk_money = float(cfg["risk"]["risk_per_trade_pct"]) / 100 * base
+        guard = None
         max_open = cfg["live"].get("max_open_risk_pct")
         if max_open:
-            base = float(cap or broker.equity())
-            broker = PortfolioRiskGuard(broker, mt5, self.all_magics, float(max_open) / 100 * base,
-                                        float(cfg["risk"]["risk_per_trade_pct"]) / 100 * base)
+            broker = guard = PortfolioRiskGuard(broker, mt5, self.all_magics,
+                                                float(max_open) / 100 * base, risk_money)
+        max_dd = cfg["live"].get("max_drawdown_pct")
+        if max_dd:
+            broker = DrawdownBreaker(broker, mt5, base, float(max_dd), self.label)
+        mult = cfg["live"].get("max_spread_mult")
+        if mult:
+            broker = SpreadGuard(broker, float(mult) * float(cfg["costs"]["spread_pips"]), self.label)
+        # Outermost: explains every order / stop move / close in plain English
+        info = mt5.symbol_info(self.symbol)
+        broker = narrate.NarratingBroker(
+            broker, self.label, self.symbol, self.pip,
+            float(info.trade_contract_size) if info else 100000.0, risk_money,
+            currency=(mt5.account_info().currency if mt5.account_info() else "CAD"),
+            open_risk_fn=guard.open_risk if guard else None,
+            risk_cap=guard._cap if guard else None)
         self.broker = broker
         for s in [self.symbol] + ([self.smt_symbol] if self.smt_symbol else []):
             mt5.symbol_select(s, True)
@@ -449,6 +591,11 @@ class StrategyRunner:
                       self.unit["magic"], cfg["data"]["timeframe"],
                       0 if bars is None else len(bars), self.last_ts,
                       "open" if broker.position() is not None else "none")
+        hist = (f"about {self.warmup_days} days of history" if self.warmup_days
+                else "today's candles so far")
+        narrate.say("%s is ready (%s candles): replayed %s to rebuild its view of the market%s.",
+                    self.label, cfg["data"]["timeframe"], hist,
+                    "; it already has an open trade" if broker.position() is not None else "")
         self.last_status = _log_status_changes(self.morning, _london_local(datetime.now(timezone.utc))[1],
                                                {}, self.log)
 
@@ -470,6 +617,8 @@ class StrategyRunner:
             self._news_logged.add(key)
             self.log.info("NEWS: skipping entry, %s (blackout %d min either side)",
                           describe_event(ev), self.risk.blackout_ns // 60_000_000_000)
+            from fxbot import narrate
+            narrate.say("%s skipped a trade because big news is close: %s.", self.label, describe_event(ev))
 
     # ------------------------------------------------------------------ each poll
     def step(self, mt5):
@@ -499,9 +648,13 @@ class StrategyRunner:
                                            self.fired_day, self.slot_limit)
             self.last_ts = bar.Index
         if had_pos and broker.position() is None:
-            _log_closed_trade(broker, self.log)
+            _log_closed_trade(broker, self.log, who=self.label)
+        before = self.last_status
         self.last_status = _log_status_changes(self.morning, _london_local(datetime.now(timezone.utc))[1],
                                                self.last_status, self.log)
+        # what changed in plain English (for the terminal); new_bars for the quiet line
+        self.changed = [v for k, v in self.last_status.items() if v and before.get(k) != v]
+        self.new_bars = len(new)
 
     def overlay_lines(self):
         from fxbot.overlay import build_lines
@@ -562,20 +715,40 @@ def run(cfg, pair="EURUSD", dry_run=False, allow_live=False, sleeve=None):
                  cfg["risk"].get("news_refresh_hours", 4))
     else:
         log.info("NEWS filter off (risk.news_filter: false)")
+    from fxbot import journal, narrate
     cap = cfg["live"].get("equity_cap")
     log.info("%s bot: %d strateg%s - %s | symbol=%s smt=%s | sizing base %s | dry_run=%s",
              pair, len(runners), "y" if len(runners) == 1 else "ies",
              ", ".join(f"{r.label} (magic {r.unit['magic']})" for r in runners),
              symbol, smt_symbol, cap or "real equity", dry_run)
+    narrate.say("Starting the %s bot%s. It runs %d strateg%s: %s.", pair,
+                " in DRY-RUN mode (no real orders)" if dry_run else "", len(runners),
+                "y" if len(runners) == 1 else "ies", ", ".join(r.label for r in runners))
+    if news is not None:
+        narrate.say("News filter is on: no new trades %s min either side of big %s news.",
+                    cfg["risk"].get("news_blackout_minutes", 30), "/".join(curr or ["all"]))
+    market_magics = {r.unit["magic"] for r in runners}
 
     failures = 0
     while True:
         try:
+            ti = mt5.terminal_info() if mt5.initialize() else None
+            journal.attach(log, pair, str(Path(ti.commondata_path) / "Files") if ti else None, symbol)
             for r in runners:
                 r.connect(mt5)
             acct = mt5.account_info()
             log.info("Account currency %s: 1 %s move per unit = %.4f %s (sizing uses this)",
                      acct.currency, symbol[3:6], runners[0].risk.quote_to_account, acct.currency)
+            risk_money = float(cfg["risk"]["risk_per_trade_pct"]) / 100 * float(cap or acct.equity)
+            narrate.say("Ready. Account is in %s (1 USD = %.2f %s). Each trade risks about %s %s.",
+                        acct.currency, runners[0].risk.quote_to_account, acct.currency,
+                        f"{risk_money:,.0f}", acct.currency)
+            for r in runners:                       # what each strategy sees right now
+                for st in r.last_status.values():
+                    if st:
+                        narrate.say("%s", _labelled(r.label, st))
+            DrawdownBreaker.update_peak(acct.equity)
+            summary_day = datetime.now(timezone.utc).astimezone(LONDON).date()
             overlay_path = _overlay_path(mt5, symbol)
             _remove_stale_overlays(overlay_path)
 
@@ -603,11 +776,32 @@ def run(cfg, pair="EURUSD", dry_run=False, allow_live=False, sleeve=None):
                 for r in runners:
                     r.step(mt5)
                 b = runners[0].broker
+                open_now = [r.label for r in runners if r.broker.position() is not None]
                 log.info("Poll %s London | spread %.1f pips | open: %s | equity %.2f",
                          datetime.now(timezone.utc).astimezone(LONDON).strftime("%H:%M"),
-                         b.current_spread_pips(),
-                         ", ".join(r.label for r in runners if r.broker.position() is not None) or "none",
-                         b.equity())
+                         b.current_spread_pips(), ", ".join(open_now) or "none", b.equity())
+                # Terminal: what changed, or one short line for a quiet candle
+                changed = [_labelled(r.label, c) for r in runners for c in getattr(r, "changed", [])]
+                for c in changed:
+                    narrate.say("%s", c)
+                if not changed and any(getattr(r, "new_bars", 0) for r in runners):
+                    narrate.say("Checked the new candle: nothing to do.%s",
+                                f" Open trade: {', '.join(open_now)}." if open_now else "")
+                acct = mt5.account_info()
+                if acct is not None:
+                    DrawdownBreaker.update_peak(acct.equity)
+                # Daily summary when a new London day starts
+                today = datetime.now(timezone.utc).astimezone(LONDON).date()
+                if today != summary_day:
+                    _daily_summary(mt5, pair, market_magics, summary_day, runners)
+                    summary_day = today
+                # Watchdog: market open but no new candles for far too long -> reconnect
+                now = datetime.now(timezone.utc)
+                for r in runners:
+                    if stalled(r.last_ts, r.cfg["data"]["timeframe"], now):
+                        narrate.say("No new candles from MT5 for %s; reconnecting.", r.label)
+                        raise RuntimeError(f"stalled: no new {r.cfg['data']['timeframe']} bars since "
+                                           f"{r.last_ts} for {r.label}")
                 _draw()
 
         except KeyboardInterrupt:
@@ -621,6 +815,8 @@ def run(cfg, pair="EURUSD", dry_run=False, allow_live=False, sleeve=None):
         except Exception as exc:
             failures += 1
             log.error("Error (failure %d/5): %s", failures, exc, exc_info=True)
+            narrate.say("Something went wrong (%s). Reconnecting in 60 seconds (attempt %d of 5).",
+                        str(exc)[:80], failures)
             try:
                 mt5.shutdown()
             except Exception:
@@ -630,6 +826,41 @@ def run(cfg, pair="EURUSD", dry_run=False, allow_live=False, sleeve=None):
                 break
             log.info("Reconnecting in 60s...")
             time.sleep(60)
+
+
+def _labelled(label, status):
+    """\"London: Sweep: ...\" but not \"Pullback: Pullback: ...\"."""
+    first = label.split()[0]
+    if status.lower().startswith(first.lower() + ":"):
+        return label + status[len(first):]          # "Trend: ..." -> "Trend 55d: ..."
+    return f"{label}: {status}"
+
+
+def _daily_summary(mt5, pair, magics, day, runners):
+    """One line per market per London day: closed trades, P/L, open trades, equity."""
+    from fxbot import narrate
+    try:
+        start = datetime(day.year, day.month, day.day, tzinfo=LONDON).astimezone(timezone.utc)
+        end = start + timedelta(days=1)
+        # MT5 history wants server-time-ish naive datetimes; pad and filter by magic
+        deals = mt5.history_deals_get(start - timedelta(hours=12), end + timedelta(hours=12)) or []
+        from fxbot.data import server_ts_to_utc
+        pnl, n = 0.0, 0
+        for d in deals:
+            if d.magic in magics and d.entry == mt5.DEAL_ENTRY_OUT:
+                t = server_ts_to_utc([d.time])[0]
+                if start <= t.to_pydatetime() < end:
+                    pnl += d.profit + d.commission + d.swap
+                    n += 1
+        acct = mt5.account_info()
+        open_now = [r.label for r in runners if r.broker.position() is not None]
+        log.info("DAILY SUMMARY %s %s: %d closed trade(s), P/L %+.2f, open: %s, account equity %.2f",
+                 pair, day, n, pnl, ", ".join(open_now) or "none", acct.equity if acct else float("nan"))
+        narrate.say("Daily summary for %s (%s): %d trade(s) closed, P/L %s; open trades: %s; "
+                    "account equity %s.", pair, day, n, narrate.money(pnl, acct.currency if acct else "CAD"),
+                    ", ".join(open_now) or "none", f"{acct.equity:,.2f}" if acct else "?")
+    except Exception as e:                      # a summary must never stop trading
+        log.warning("daily summary failed: %s", e)
 
 
 def _remove_stale_overlays(path):
@@ -671,11 +902,13 @@ def main():
                     help="extra strategy on that market, e.g. pullback (EURUSD/GBPUSD) or fast (XAUUSD)")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--allow-live", action="store_true")
+    ap.add_argument("--verbose", action="store_true",
+                    help="also print the technical log lines in the terminal (always in the log file)")
     args = ap.parse_args()
 
     tag = f"{args.pair}_{args.sleeve}" if args.sleeve else args.pair
     global log
-    log = _setup_logging(tag)
+    log = _setup_logging(tag, verbose=args.verbose)
     lock = _single_instance_lock(tag)              # keep the handle open for the process life
     if lock is None:
         log.error("Another run_live.py is already running for %s - exiting so trades "

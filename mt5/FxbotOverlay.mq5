@@ -9,12 +9,17 @@
 //| Display only - it never places or changes orders.                 |
 //+------------------------------------------------------------------+
 #property copyright "MoneyPrinter2"
-#property version   "1.10"
+#property version   "1.20"
 #property indicator_chart_window
 #property indicator_plots 0
 
 input int  RefreshSeconds = 2;
 input int  FontSize       = 9;
+input bool PrintEvents    = true;   // print bot events (orders, fills, closes, skips, daily summary) to the Experts tab
+input bool PrintStatus    = true;   // also print "what the bot sees" status changes
+
+ulong g_events_pos  = 0;
+bool  g_events_init = false;
 
 const string PFX = "fxbot_";
 
@@ -38,7 +43,38 @@ int OnCalculate(const int rates_total, const int prev_calculated, const int begi
    return(rates_total);
 }
 
-void OnTimer() { Redraw(); }
+void OnTimer() { Redraw(); PrintNewEvents(); }
+
+// New lines the bot appended to <Common>\Files\fxbot_events_<SYMBOL>.txt -> Experts tab
+void PrintNewEvents()
+{
+   if(!PrintEvents) return;
+   int h = FileOpen("fxbot_events_" + _Symbol + ".txt", FILE_READ | FILE_TXT | FILE_ANSI | FILE_COMMON |
+                    FILE_SHARE_READ | FILE_SHARE_WRITE);
+   if(h == INVALID_HANDLE) return;
+   ulong size = FileSize(h);
+   if(!g_events_init)                      // start at the end: only print what happens from now on
+   {
+      g_events_pos = size;
+      g_events_init = true;
+      FileClose(h);
+      Print("fxbot: printing bot events for ", _Symbol, " here (orders, fills, closes, skips, daily summary)");
+      return;
+   }
+   if(size < g_events_pos) g_events_pos = 0;   // the bot trimmed the file
+   FileSeek(h, (long)g_events_pos, SEEK_SET);
+   while(!FileIsEnding(h))
+   {
+      string line = FileReadString(h);
+      int bar = StringFind(line, "|");
+      if(bar <= 0) continue;
+      string label = StringSubstr(line, 0, bar);
+      if(label == "STATUS" && !PrintStatus) continue;
+      Print("fxbot ", _Symbol, " ", label, ": ", StringSubstr(line, bar + 1));
+   }
+   g_events_pos = FileTell(h);
+   FileClose(h);
+}
 
 color ParseColor(string rgb)
 {

@@ -275,5 +275,9 @@ live:
   server_tz: "Europe/Helsinki"  # broker server timezone (MT5 uses this for bar timestamps)
   magic: 12345               # base magic; each pair uses magic + its index in pairs:
   max_open_risk_pct: 5.0     # portfolio cap: all bots' open risk combined (on equity_cap) never exceeds this
+  max_spread_mult: 2.5       # skip a new entry if the live spread > 2.5x the pair's normal spread_pips
+                             #   (EURUSD 3.5 pips, GBPUSD 5.0, gold $2.00)
+  max_drawdown_pct: 15.0     # circuit breaker: no new trades once the account is 15% (of equity_cap)
+                             #   below its peak. Resume: delete data/state/peak_equity.json
   equity_cap: 50000          # size trades as if the account were this big (null = use real equity)
   allow_live: false          # must be true AND --allow-live flag set to run on a real account

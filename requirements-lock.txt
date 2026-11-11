@@ -1,0 +1,13 @@
+# Exact versions the bot is tested with (Python 3.14, Windows). Install with:
+#   pip install -r requirements-lock.txt
+# requirements.txt keeps the loose list; update this file when you upgrade on purpose.
+pandas==3.1.1
+numpy==2.5.4
+PyYAML==6.0.3
+tzdata
+matplotlib==3.11.2
+pytest==9.2.0
+python-dotenv==1.2.4
+requests==2.34.2
+MetaTrader5==5.0.6231
+reportlab==5.1.0

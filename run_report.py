@@ -135,6 +135,8 @@ def main():
             line += (f"  ||  backtest: {e['trades_per_week']:.1f}/wk  win {e['win_rate'] * 100:.0f}%  "
                      f"avg {e['avg_r']:+.2f}R")
         print(line)
+    print("Reference: 2026 out-of-sample (Jan 1 - Nov 11, data never used for tuning; re-run with "
+          "python run_oos_mt5.py): portfolio +17.0%, PF 2.60, max DD -4.7%, ~1.3 trades/week.")
     n_closed = len(closed)
     print(f"\nTotal P/L {closed.pnl.sum():+,.2f} {acct.currency} over {n_closed} closed trades. "
           f"Average entry slippage {t.slippage_pips.mean():+.2f} pips.")

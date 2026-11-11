@@ -403,6 +403,14 @@ def build():
         "that the three windows are back.",
     ])
     s.append(P("5.3 Seeing what the bot \"thinks\"", H2))
+    s.append(P("<b>Terminal windows.</b> Each market's window explains itself in plain English, like "
+               "code comments, e.g. <i># London wants to SELL GBPUSD: price broke below the overnight "
+               "range and stayed there.</i> It covers startup, what each strategy is waiting for, every "
+               "order, stop move, close (with P/L), skipped trades and why, and a daily summary. Add "
+               "<font face='Courier'>--verbose</font> to also see the technical lines."))
+    s.append(P("<b>Journal.</b> logs/journal_&lt;date&gt;.log collects the important events from all "
+               "three markets in one file. The FxbotOverlay indicator also prints them in MT5's "
+               "<b>Experts</b> tab."))
     s.append(P("<b>Chart overlay.</b> In MT5, open a 5-minute EURUSD., GBPUSD. or XAUUSD chart, then "
                "Navigator (Ctrl+N), Indicators, <b>FxbotOverlay</b>, and drag it onto the chart. The "
                "bot redraws it after every candle. It only draws; it never trades."))
@@ -516,6 +524,10 @@ def build():
         "Closes positions by ticket, which is required on your hedging-mode account. Without this, a close "
         "would open an opposite trade instead.",
         "Daily loss limit, leverage cap, and the CAD conversion so the risk is what it says.",
+        "Spread guard: no new entry while the live spread is over 2.5 times normal (news spikes, rollover).",
+        "Drawdown circuit breaker: no new trades once the account is 15% below its best level. Open "
+        "trades keep their stops. Delete data/state/peak_equity.json to resume after checking why.",
+        "Stall watchdog: if the market is open but MT5 stops sending candles, the bot reconnects.",
         "<b>News filter:</b> no new trades 30 minutes either side of high-impact news for that "
         "market's currencies (EURUSD: USD and EUR, GBPUSD: USD and GBP, gold: USD). The bot reads "
         "the Forex Factory weekly calendar every 4 hours and caches it. If the download fails it "

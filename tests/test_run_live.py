@@ -117,6 +117,47 @@ def test_portfolio_risk_guard_blocks_over_cap():
     assert guard2.submit(object()) is True
 
 
+def test_spread_guard_skips_wide_spread():
+    class B:
+        sp, sent = 1.4, 0
+        def current_spread_pips(self): return B.sp
+        def submit(self, o): B.sent += 1; return True
+    g = run_live.SpreadGuard(B(), 3.5, "London")
+    assert g.submit(object()) is True and B.sent == 1
+    B.sp = 6.0
+    assert g.submit(object()) is False and B.sent == 1
+
+
+def test_drawdown_breaker(tmp_path, monkeypatch):
+    monkeypatch.setattr(run_live.DrawdownBreaker, "STATE", tmp_path / "peak.json")
+    class B:
+        sent = 0
+        def submit(self, o): B.sent += 1; return True
+    class M:
+        eq = 50000.0
+        def account_info(self): return SimpleNamespace(equity=M.eq)
+    run_live.DrawdownBreaker.update_peak(52000.0)
+    br = run_live.DrawdownBreaker(B(), M(), 50000, 15.0, "London")
+    assert br.submit(object()) is True                       # 2000 / 50000 = 4% below peak
+    M.eq = 44000.0                                           # 8000 / 50000 = 16% below peak
+    assert br.submit(object()) is False and B.sent == 1
+    assert run_live.DrawdownBreaker.update_peak(44000.0) == 52000.0   # peak never drops
+
+
+def test_stall_watchdog_respects_market_hours():
+    import pandas as pd
+    wed = pd.Timestamp("2026-11-11 10:00", tz="UTC")              # Wednesday, market open
+    assert run_live.stalled(wed - pd.Timedelta(minutes=10), "5min", wed) is False
+    assert run_live.stalled(wed - pd.Timedelta(minutes=60), "5min", wed) is True
+    assert run_live.stalled(wed - pd.Timedelta(hours=2), "1h", wed) is False
+    sat = pd.Timestamp("2026-11-14 10:00", tz="UTC")              # weekend: never "stalled"
+    assert run_live.stalled(sat - pd.Timedelta(hours=30), "5min", sat) is False
+    sun_open = pd.Timestamp("2026-11-15 22:10", tz="UTC")         # just reopened after the weekend
+    assert run_live.stalled(pd.Timestamp("2026-11-13 20:55", tz="UTC"), "5min", sun_open) is False
+    daily = pd.Timestamp("2026-11-11 23:05", tz="UTC")            # just after the daily break
+    assert run_live.stalled(pd.Timestamp("2026-11-11 20:55", tz="UTC"), "5min", daily) is False
+
+
 def test_build_morning_uses_strategy_stack():
     cfg = yaml.safe_load(open("config.yaml"))
     names = [type(s).__name__ for s in run_live._build_morning(cfg)]
