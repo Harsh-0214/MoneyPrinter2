@@ -210,7 +210,8 @@ def _add_daily_ema(mt5, symbol, cfg, bars):
         h1.index = server_ts_to_utc(h1["time"].values)
         h1 = h1[h1.index.notna()]
         ema = daily_ema_series(h1["close"], period)
-        _EMA_CACHE.clear()
+        for k in [k for k in _EMA_CACHE if k[2] != key[2]]:
+            del _EMA_CACHE[k]
         _EMA_CACHE[key] = ema
         uses_trend = any(s.get("ema_filter") or s.get("daily_trend_filter")
                          for s in cfg.get("strategies", {}).get("morning", []))
@@ -271,7 +272,7 @@ def _fetch_completed_bars(mt5, symbol, smt_symbol, cfg, start_utc):
     return bars
 
 
-def _log_status_changes(strategies, local_min, last):
+def _log_status_changes(strategies, local_min, last, logger=None):
     """Log each strategy's 'what I see' line whenever it changes."""
     now = {}
     for s in strategies:
@@ -283,21 +284,21 @@ def _log_status_changes(strategies, local_min, last):
             continue
         now[type(s).__name__] = st
         if st and last.get(type(s).__name__) != st:
-            log.info("STATUS %s", st)
+            (logger or log).info("STATUS %s", st)
     return now
 
 
-def _log_closed_trade(broker):
+def _log_closed_trade(broker, logger=None):
     """A position disappeared (stop / target hit at the broker, or our close)."""
     try:
         trades = broker.trades
     except Exception:
         trades = []
     if not trades:
-        log.info("CLOSED position (no deal details available)")
+        (logger or log).info("CLOSED position (no deal details available)")
         return
     t = trades[-1]
-    log.info("CLOSED %s %s %d units: entry %.5f -> exit %.5f  P/L %.2f  reason=%s",
+    (logger or log).info("CLOSED %s %s %d units: entry %.5f -> exit %.5f  P/L %.2f  reason=%s",
              t.tag, "BUY" if t.side == 1 else "SELL", t.units, t.entry_price,
              t.exit_price, t.pnl, t.exit_reason)
 
@@ -352,157 +353,229 @@ def _unit(cfg, pair, sleeve=None):
     return units[key]
 
 
+STRATEGY_LABELS = {"london_sweep": "London", "london_breakout": "London",
+                   "daily_pullback": "Pullback", "trend_follow": "Trend"}
+
+
+def _label(unit_cfg):
+    specs = unit_cfg["strategies"]["morning"]
+    names = []
+    for s in specs:
+        lab = STRATEGY_LABELS.get(s["name"], s["name"])
+        if s["name"] == "trend_follow":
+            lab = f"Trend {s.get('entry_days', 55)}d"
+        if lab not in names:
+            names.append(lab)
+    return "+".join(names)
+
+
+class _Prefixed(logging.LoggerAdapter):
+    def process(self, msg, kwargs):
+        return f"[{self.extra['tag']}] {msg}", kwargs
+
+
+class StrategyRunner:
+    """One strategy group inside a market's bot (e.g. EURUSD's London stack, or its
+    daily pullback). Keeps its own state, bar timeframe and MT5 magic number, so its
+    trades are tracked separately in the account and it can hold a position at the
+    same time as the market's other strategies. The market bot runs all of them in
+    one loop; each one only trades when its own setup appears."""
+
+    def __init__(self, full_cfg, unit, symbol, smt_symbol, all_magics, dry_run, allow_live):
+        from fxbot.backtest import instrument_pip, pair_config
+        self.unit, self.symbol, self.smt_symbol = unit, symbol, smt_symbol
+        self.all_magics, self.dry_run, self.allow_live = all_magics, dry_run, allow_live
+        self.cfg = pair_config(full_cfg, unit)
+        self.cfg["live"] = dict(self.cfg["live"], symbol=symbol, magic=unit["magic"])
+        self.label = _label(self.cfg)
+        self.log = _Prefixed(log, {"tag": self.label})
+        self.pip = instrument_pip(self.cfg)
+        self.warmup_days = int(self.cfg.get("warmup_days", 0))
+        self.slot_limit = int(self.cfg.get("slot_max_trades", 1))
+
+    # ------------------------------------------------------------------ startup
+    def connect(self, mt5):
+        from fxbot.backtest import route_morning
+        from fxbot.brokers.mt5_broker import MT5Broker
+        from fxbot.risk import RiskManager
+        cfg = self.cfg
+        self.real_broker = MT5Broker(cfg, self.log, allow_live=self.allow_live)
+        broker = DryRunBroker(self.real_broker) if self.dry_run else self.real_broker
+        cap = cfg["live"].get("equity_cap")
+        if cap:
+            broker = CappedEquityBroker(broker, cap)
+        max_open = cfg["live"].get("max_open_risk_pct")
+        if max_open:
+            base = float(cap or broker.equity())
+            broker = PortfolioRiskGuard(broker, mt5, self.all_magics, float(max_open) / 100 * base,
+                                        float(cfg["risk"]["risk_per_trade_pct"]) / 100 * base)
+        self.broker = broker
+        for s in [self.symbol] + ([self.smt_symbol] if self.smt_symbol else []):
+            mt5.symbol_select(s, True)
+
+        # Fresh strategy objects, then replay closed bars (today for the London
+        # stack, `warmup_days` of history for daily strategies) to rebuild state.
+        self.morning = _build_morning(cfg)
+        r_cfg = dict(cfg["risk"])
+        if "min_units" in cfg.get("instrument", {}):
+            r_cfg["min_units"] = cfg["instrument"]["min_units"]
+        self.risk = RiskManager(r_cfg, self.pip)
+        now_local = datetime.now(timezone.utc).astimezone(LONDON)
+        self.day_start_utc = now_local.replace(hour=0, minute=0, second=0,
+                                               microsecond=0).astimezone(timezone.utc)
+        bars = _fetch_completed_bars(mt5, self.symbol, self.smt_symbol, cfg,
+                                     self.day_start_utc - timedelta(days=self.warmup_days))
+        replay = _NoOrderBroker(broker)
+        self.risk.new_day(broker.equity())
+        self.fired_day, self.cur_day, self.last_ts = None, None, None
+        if bars is not None:
+            for bar in bars.itertuples():
+                day, lmin = _london_local(bar.Index.to_pydatetime())
+                self.cur_day = day
+                self.fired_day = route_morning(self.morning, bar, day, lmin, replay, self.risk,
+                                               self.fired_day, self.slot_limit)
+                self.last_ts = bar.Index
+        if broker.position() is not None and self.cur_day is not None:
+            self.fired_day = self.cur_day           # a position from today uses the slot
+            for s in self.morning:
+                s.mark_fired()
+        self.risk.quote_to_account = self.real_broker.quote_to_account()
+        self.log.info("ready: magic=%d timeframe=%s replayed=%d bars, last=%s, position=%s",
+                      self.unit["magic"], cfg["data"]["timeframe"],
+                      0 if bars is None else len(bars), self.last_ts,
+                      "open" if broker.position() is not None else "none")
+        self.last_status = _log_status_changes(self.morning, _london_local(datetime.now(timezone.utc))[1],
+                                               {}, self.log)
+
+    # ------------------------------------------------------------------ each poll
+    def step(self, mt5):
+        from fxbot.backtest import route_morning
+        since = self.last_ts.to_pydatetime() if self.last_ts is not None else self.day_start_utc
+        bars = _fetch_completed_bars(mt5, self.symbol, self.smt_symbol, self.cfg,
+                                     since - timedelta(minutes=10))
+        if bars is None:
+            self.log.warning("No bars from MT5, retrying next poll")
+            return
+        broker = self.broker
+        new = bars[bars.index > self.last_ts] if self.last_ts is not None else bars
+        had_pos = broker.position() is not None
+        if len(new):
+            live_spread = broker.current_spread_pips()
+            self.risk.quote_to_account = self.real_broker.quote_to_account()
+        for k, bar in enumerate(new.itertuples()):
+            day, lmin = _london_local(bar.Index.to_pydatetime())
+            if day != self.cur_day:
+                self.cur_day = day
+                self.risk.new_day(broker.equity())
+            if k == len(new) - 1:
+                # Size the newest bar's order on the actual live spread
+                bar = bar._replace(spread_pips=max(bar.spread_pips, live_spread))
+            self.fired_day = route_morning(self.morning, bar, day, lmin, broker, self.risk,
+                                           self.fired_day, self.slot_limit)
+            self.last_ts = bar.Index
+        if had_pos and broker.position() is None:
+            _log_closed_trade(broker, self.log)
+        self.last_status = _log_status_changes(self.morning, _london_local(datetime.now(timezone.utc))[1],
+                                               self.last_status, self.log)
+
+    def overlay_lines(self):
+        from fxbot.overlay import build_lines
+        lmin = _london_local(datetime.now(timezone.utc))[1]
+        lines = build_lines(self.morning, lmin, self.broker, self.symbol)[1:]   # drop per-runner header
+        return [f"STATUS|[{self.label}] {l[7:]}" if l.startswith("STATUS|") else l for l in lines]
+
+
 def run(cfg, pair="EURUSD", dry_run=False, allow_live=False, sleeve=None):
+    """One bot per market: runs every strategy configured for `pair` (its main
+    London/trend stack plus its `sleeves`) in a single loop."""
     import MetaTrader5 as mt5
-    from fxbot.backtest import expand_units, route_morning
-    from fxbot.brokers.mt5_broker import MT5Broker
-    from fxbot.risk import RiskManager
+    from fxbot.backtest import expand_units
 
-    from fxbot.backtest import instrument_pip, pair_config
-
-    unit = _unit(cfg, pair, sleeve)
+    units = [u for u in expand_units(cfg)
+             if u["market"] == pair and (sleeve is None or u["sleeve"] == sleeve)]
+    if not units:
+        raise SystemExit(f"No strategies configured for {pair}{':' + sleeve if sleeve else ''}")
     symbol, smt_symbol, _ = _resolve_pair(cfg, pair)
-    if sleeve:
-        smt_symbol = None                                  # SMT is only for the London stack
-    magic = unit["magic"]
     all_magics = {u["magic"] for u in expand_units(cfg)}
-    full_cfg = cfg
-    cfg = pair_config(cfg, unit)                           # this unit's strategies/costs/timeframe
-    cfg["live"] = dict(cfg["live"], symbol=symbol, magic=magic)
-    pip = instrument_pip(cfg)
-    warmup_days = int(cfg.get("warmup_days", 0))
-    log.info("Unit %s -> symbol=%s smt=%s magic=%d timeframe=%s strategies=%s",
-             unit["key"], symbol, smt_symbol, magic, cfg["data"]["timeframe"],
-             [s["name"] for s in cfg["strategies"]["morning"]])
+    runners = [StrategyRunner(cfg, u, symbol, None if u["sleeve"] else smt_symbol,
+                              all_magics, dry_run, allow_live) for u in units]
+    cap = cfg["live"].get("equity_cap")
+    log.info("%s bot: %d strateg%s - %s | symbol=%s smt=%s | sizing base %s | dry_run=%s",
+             pair, len(runners), "y" if len(runners) == 1 else "ies",
+             ", ".join(f"{r.label} (magic {r.unit['magic']})" for r in runners),
+             symbol, smt_symbol, cap or "real equity", dry_run)
 
-    consecutive_failures = 0
+    failures = 0
     while True:
-        broker = None
         try:
-            real_broker = MT5Broker(cfg, log, allow_live=allow_live)
-            broker = DryRunBroker(real_broker) if dry_run else real_broker
-            cap = cfg["live"].get("equity_cap")
-            if cap:
-                broker = CappedEquityBroker(broker, cap)
-                log.info("Sizing as if equity = %.0f (live.equity_cap)", cap)
-            max_open = cfg["live"].get("max_open_risk_pct")
-            if max_open:
-                broker = PortfolioRiskGuard(broker, mt5, all_magics,
-                                            float(max_open) / 100 * float(cap or broker.equity()),
-                                            float(cfg["risk"]["risk_per_trade_pct"]) / 100
-                                            * float(cap or broker.equity()))
-            for s in [symbol] + ([smt_symbol] if smt_symbol else []):
-                mt5.symbol_select(s, True)
-
-            # Fresh strategy objects every (re)connect, then replay today's
-            # closed bars so ranges / sweeps / trades_today are rebuilt.
-            morning = _build_morning(cfg)
-            r_cfg = dict(cfg["risk"])
-            if "min_units" in cfg.get("instrument", {}):
-                r_cfg["min_units"] = cfg["instrument"]["min_units"]
-            risk = RiskManager(r_cfg, pip)
-            now_local = datetime.now(timezone.utc).astimezone(LONDON)
-            day_start_utc = now_local.replace(hour=0, minute=0, second=0,
-                                              microsecond=0).astimezone(timezone.utc)
-            # Strategies that need history (gold trend: 55-day channel) replay
-            # `warmup_days` of closed bars first; the London stack replays today only.
-            replay_from = day_start_utc - timedelta(days=warmup_days)
-            bars = _fetch_completed_bars(mt5, symbol, smt_symbol, cfg, replay_from)
-            replay = _NoOrderBroker(broker)
-            risk.new_day(broker.equity())
-            fired_day, cur_day, last_ts = None, None, None
-            if bars is not None:
-                for bar in bars.itertuples():
-                    day, lmin = _london_local(bar.Index.to_pydatetime())
-                    cur_day = day
-                    fired_day = route_morning(morning, bar, day, lmin, replay, risk, fired_day, int(cfg.get("slot_max_trades", 1)))
-                    last_ts = bar.Index
-            # A position already open from today means the morning slot is used
-            if broker.position() is not None and cur_day is not None:
-                fired_day = cur_day
-                for s in morning:
-                    s.mark_fired()
-            log.info("Startup replay: %d bars, last=%s, slot_used=%s, position=%s",
-                     0 if bars is None else len(bars), last_ts,
-                     fired_day is not None, broker.position() is not None)
-            risk.quote_to_account = real_broker.quote_to_account()
+            for r in runners:
+                r.connect(mt5)
             acct = mt5.account_info()
             log.info("Account currency %s: 1 %s move per unit = %.4f %s (sizing uses this)",
-                     acct.currency, symbol[3:6], risk.quote_to_account, acct.currency)
-            log.info("Bot started. equity=%.2f dry_run=%s", broker.equity(), dry_run)
-            overlay_path = _overlay_path(mt5, symbol + (f"_{sleeve}" if sleeve else ""))
+                     acct.currency, symbol[3:6], runners[0].risk.quote_to_account, acct.currency)
+            overlay_path = _overlay_path(mt5, symbol)
+            _remove_stale_overlays(overlay_path)
 
             def _draw():
                 if overlay_path is None:
                     return
                 try:
-                    from fxbot.overlay import build_lines, write_overlay
-                    lmin = _london_local(datetime.now(timezone.utc))[1]
-                    write_overlay(overlay_path, build_lines(morning, lmin, broker, symbol))
+                    from fxbot.overlay import write_overlay
+                    lines = [f"STATUS|fxbot {pair} | {len(runners)} strategies | "
+                             f"updated {time.strftime('%H:%M:%S')}"]
+                    for r in runners:
+                        lines += r.overlay_lines()
+                    write_overlay(overlay_path, lines)
                 except Exception as e:          # drawing must never stop trading
                     log.warning("overlay write failed: %s", e)
 
             _draw()
-            last_status = _log_status_changes(morning, _london_local(datetime.now(timezone.utc))[1], {})
-            consecutive_failures = 0
-
+            log.info("Bot started. equity=%.2f", runners[0].broker.equity())
+            failures = 0
             while True:
                 _sleep_to_next_bar()
-                since = (last_ts.to_pydatetime() if last_ts is not None else day_start_utc)
-                bars = _fetch_completed_bars(mt5, symbol, smt_symbol, cfg,
-                                             since - timedelta(minutes=10))
-                if bars is None or len(bars) == 0:
-                    log.warning("No bars from MT5, retrying next bar")
-                    continue
-                new = bars[bars.index > last_ts] if last_ts is not None else bars
-                had_pos = broker.position() is not None
-                live_spread = broker.current_spread_pips()
-                fx = getattr(real_broker, "quote_to_account", None)
-                if fx is not None:
-                    risk.quote_to_account = fx()
-                for k, bar in enumerate(new.itertuples()):
-                    day, lmin = _london_local(bar.Index.to_pydatetime())
-                    if day != cur_day:
-                        cur_day = day
-                        risk.new_day(broker.equity())
-                        log.info("New London day %s equity=%.2f", day, broker.equity())
-                    if k == len(new) - 1:
-                        # Size the newest bar's order on the actual live spread
-                        bar = bar._replace(spread_pips=max(bar.spread_pips, live_spread))
-                    fired_day = route_morning(morning, bar, day, lmin, broker, risk, fired_day, int(cfg.get("slot_max_trades", 1)))
-                    last_ts = bar.Index
-                    log.info("Bar %s spread=%.1fpip position=%s equity=%.2f",
-                             bar.Index.astimezone(LONDON).strftime("%H:%M"), bar.spread_pips,
-                             "open" if broker.position() is not None else "none",
-                             broker.equity())
-                if had_pos and broker.position() is None:
-                    _log_closed_trade(broker)
-                lmin_now = _london_local(datetime.now(timezone.utc))[1]
-                last_status = _log_status_changes(morning, lmin_now, last_status)
+                for r in runners:
+                    r.step(mt5)
+                b = runners[0].broker
+                log.info("Poll %s London | spread %.1f pips | open: %s | equity %.2f",
+                         datetime.now(timezone.utc).astimezone(LONDON).strftime("%H:%M"),
+                         b.current_spread_pips(),
+                         ", ".join(r.label for r in runners if r.broker.position() is not None) or "none",
+                         b.equity())
                 _draw()
 
         except KeyboardInterrupt:
             log.info("Bot stopped cleanly.")
-            if broker is not None:
-                try:
-                    broker.shutdown()
-                except Exception:
-                    pass
+            try:
+                mt5.shutdown()
+            except Exception:
+                pass
             break
 
         except Exception as exc:
-            consecutive_failures += 1
-            log.error("Error (failure %d/5): %s", consecutive_failures, exc, exc_info=True)
-            if broker is not None:
-                try:
-                    broker.shutdown()
-                except Exception:
-                    pass
-            if consecutive_failures >= 5:
-                log.error("5 consecutive failures — exiting.")
+            failures += 1
+            log.error("Error (failure %d/5): %s", failures, exc, exc_info=True)
+            try:
+                mt5.shutdown()
+            except Exception:
+                pass
+            if failures >= 5:
+                log.error("5 consecutive failures - exiting.")
                 break
             log.info("Reconnecting in 60s...")
             time.sleep(60)
+
+
+def _remove_stale_overlays(path):
+    """Old per-strategy overlay files (fxbot_<SYMBOL>_<sleeve>.txt) would double-draw."""
+    if not path:
+        return
+    import glob
+    for f in glob.glob(path[:-4] + "_*.txt"):
+        try:
+            os.remove(f)
+        except OSError:
+            pass
 
 
 def _single_instance_lock(pair):

@@ -1,17 +1,22 @@
 # MoneyPrinter2 — FX + Gold Trading Bot for MetaTrader 5
 
 Automated trading bot for MetaTrader 5 (FOREX.com demo, Canada, CAD account).
-Six bots run side by side, on three markets. Each is one strategy with its own
-position and magic number, so strategies on the same market can hold trades at the same time:
+**One bot per market** (EURUSD, GBPUSD, XAUUSD). Each bot runs all of that
+market's strategies and trades whichever one has a setup. Every strategy keeps
+its own trade label (magic number), so strategies on the same market can hold
+positions at the same time, and the report tracks each one separately:
 
-| Bot (unit) | Strategy | Bars | Trades/yr | Magic | When it trades |
+| Market bot | Strategy | Bars | Trades/yr | Magic | When it trades |
 |---|---|---|---|---|---|
 | **EURUSD** | London Sweep + Breakout, daily trend filter | 5 min | ~27 | 12345 | 08:00–11:00 London, exits 16:00 |
-| **GBPUSD** | same (EURUSD and GBPUSD are each other's SMT check) | 5 min | ~38 | 12346 | same |
-| **EURUSD:pullback** | Daily swing pullback (RSI-2, 100-day trend) | 1 h | ~10 | 12445 | decides daily, holds 1–10 days |
-| **GBPUSD:pullback** | Daily swing pullback (RSI-2, 200-day trend) | 1 h | ~11 | 12446 | same |
+| | Daily swing pullback (RSI-2, 100-day trend) | 1 h | ~10 | 12445 | decides daily, holds 1–10 days |
+| **GBPUSD** | London Sweep + Breakout (SMT partner: EURUSD) | 5 min | ~38 | 12346 | 08:00–11:00 London, exits 16:00 |
+| | Daily swing pullback (RSI-2, 200-day trend) | 1 h | ~11 | 12446 | decides daily, holds 1–10 days |
 | **XAUUSD** | Gold trend following, 55-day breakout, buy-only | 1 h | ~5 | 12347 | decides daily, holds weeks |
-| **XAUUSD:fast** | Gold trend following, 20-day breakout, buy-only | 1 h | ~6 | 12447 | same |
+| | Gold trend following, 20-day breakout, buy-only | 1 h | ~6 | 12447 | same |
+
+In `config.yaml`, a market's main stack is its `pairs:` entry and each extra
+strategy is a `sleeves:` item under it. Adding a strategy to a market means adding a sleeve.
 
 **Portfolio backtest, 2021–2025, 1% risk per trade, real spreads:**
 **+69.4% (11.2%/yr), max drawdown −9.7%, PF 1.54, no losing year.**
@@ -299,20 +304,22 @@ python run_backtest.py            # single-pair run, writes results/trades.csv, 
 
 ## Run live (demo)
 ```
-start_bots.bat                                 # MT5 + all six bots, auto-restart on crash
+start_bots.bat                                 # MT5 + one bot per market (3), auto-restart on crash
 stop_bots.bat                                  # stop the bots (positions are left alone)
 python run_live.py --pair XAUUSD --dry-run     # one bot, log only
-python run_live.py --pair EURUSD --sleeve pullback   # an extra-strategy bot
+python run_live.py --pair EURUSD --sleeve pullback   # just one of a market's strategies (testing)
 python run_report.py                           # demo results vs backtest expectations
 ```
-- Each bot runs its market's strategies exactly like the backtest (`route_morning`).
-  EURUSD and GBPUSD use each other as the SMT feed.
+- Each market bot runs all of its strategies in one loop, exactly like the backtest
+  (`route_morning`). Each strategy uses its own bar timeframe (5 min or 1 h).
+  EURUSD and GBPUSD's London stacks use each other as the SMT feed.
 - Only closed bars are used. Missed bars are caught up. On startup and after every
-  reconnect the bot replays today's bars (or `warmup_days` of history for gold).
-- Each bot has its own magic number. Main strategies are `live.magic` + the pair's
-  index (EURUSD 12345, GBPUSD 12346, XAUUSD 12347); sleeve j adds 100×j (12445, 12446, 12447).
-- Logs: `logs/live_<PAIR>[_<sleeve>]_<date>.log`. Chart files: `fxbot_<SYMBOL>[_<sleeve>].txt`;
-  the overlay draws every bot on that market.
+  reconnect each strategy replays today's bars, or `warmup_days` of history for the daily strategies.
+- Each strategy has its own magic number, so its trades are labelled separately in MT5.
+  Main stacks are `live.magic` + the pair's index (EURUSD 12345, GBPUSD 12346, XAUUSD 12347);
+  sleeve j adds 100×j (12445, 12446, 12447).
+- One log per market bot: `logs/live_<PAIR>_<date>.log`. Each line is tagged with the strategy
+  (`[London]`, `[Pullback]`, `[Trend 55d]`, `[Trend 20d]`). One chart file per market: `fxbot_<SYMBOL>.txt`.
 - A second copy for the same pair refuses to start, so trades can't be doubled.
 - **Chart overlay:** attach the `FxbotOverlay` indicator (in `mt5/`, installed and
   compiled into MT5) to a chart. It draws the lines each bot is watching, plus a status panel.
@@ -329,7 +336,7 @@ run_backtest.py          single-pair backtest
 run_validate.py          multi-pair walk-forward + robustness
 run_consistency.py       year-by-year grid for a single strategy
 run_arsenal.py           every strategy x every market (research)
-run_live.py              live/demo runner (one process per pair)
+run_live.py              live/demo runner (one bot per market, runs all its strategies)
 run_report.py            demo results vs backtest expectations
 start_bots.bat / run_forever.bat / stop_bots.bat   24/7 launchers
 mt5/FxbotOverlay.mq5     MT5 chart indicator (draws what the bot sees)
