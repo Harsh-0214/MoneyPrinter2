@@ -12,9 +12,7 @@ Usage:
     python combine_histdata.py --symbol GBPUSD   # GBPUSD  → data/GBPUSD_M1_histdata.csv
 
 Input directory convention:
-    EURUSD  →  data/histdata/      (original location)
-    GBPUSD  →  data/histdata_gbpusd/
-    USDJPY  →  data/histdata_usdjpy/   (etc.)
+    data/histdata/<SYMBOL>/DAT_MT_<SYMBOL>_M1_<year>.csv   (gap reports in <SYMBOL>/reports/)
 """
 import argparse
 from pathlib import Path
@@ -24,11 +22,14 @@ NY_OFFSET = pd.Timedelta(hours=5)   # histdata uses fixed UTC-5
 
 
 def histdata_dir(symbol: str) -> Path:
-    # Both EURUSD and GBPUSD (and other pairs) may live in the same data/histdata/ folder
-    shared = Path("data/histdata")
-    if list(shared.glob(f"DAT_MT_{symbol.upper()}_M1_*.csv")):
-        return shared
-    return Path(f"data/histdata_{symbol.lower()}")
+    # One folder per market: data/histdata/<SYMBOL>/DAT_MT_<SYMBOL>_M1_<year>.csv
+    # (histdata's .txt gap reports go in data/histdata/<SYMBOL>/reports/).
+    # Older layouts (all files loose in data/histdata/, or data/histdata_<symbol>/) still work.
+    sym = symbol.upper()
+    for d in (Path("data/histdata") / sym, Path("data/histdata"), Path(f"data/histdata_{symbol.lower()}")):
+        if list(d.glob(f"DAT_MT_{sym}_M1_*.csv")):
+            return d
+    return Path("data/histdata") / sym
 
 
 def output_path(symbol: str) -> Path:

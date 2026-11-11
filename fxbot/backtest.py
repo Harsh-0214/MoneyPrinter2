@@ -241,7 +241,8 @@ def run_backtest(df, cfg, strategy_cls=None):
     broker = SimBroker(cfg["account"]["starting_equity"], c_cfg["slippage_pips"],
                        c_cfg["commission_per_lot_per_side"], pip,
                        c_cfg.get("swap_long_per_lot", 0.0), c_cfg.get("swap_short_per_lot", 0.0),
-                       c_cfg.get("swap_long_pct", 0.0), c_cfg.get("swap_short_pct", 0.0))
+                       c_cfg.get("swap_long_pct", 0.0), c_cfg.get("swap_short_pct", 0.0),
+                       inverse_quote=bool(cfg.get("instrument", {}).get("inverse_quote", False)))
     r_cfg = dict(cfg["risk"])
     if "min_units" in cfg.get("instrument", {}):          # e.g. gold: 1 oz, FX: 1,000 units
         r_cfg["min_units"] = cfg["instrument"]["min_units"]
@@ -255,6 +256,8 @@ def run_backtest(df, cfg, strategy_cls=None):
 
     for i, bar in enumerate(df.itertuples()):
         broker.on_bar(bar)
+        if broker.inverse_quote:            # USD/JPY on a USD account: 1 JPY = 1/price USD
+            risk.quote_to_account = 1.0 / bar.close
         day  = local_days[i]
         lmin = local_mins[i]
         if day != prev_day:

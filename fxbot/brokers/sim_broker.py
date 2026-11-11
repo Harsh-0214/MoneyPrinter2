@@ -30,8 +30,12 @@ def compute_spread_pips(df, costs):
 class SimBroker(Broker):
     def __init__(self, starting_equity, slippage_pips=0.0, commission_per_lot_per_side=0.0, pip=PIP,
                  swap_long_per_lot=0.0, swap_short_per_lot=0.0,
-                 swap_long_pct=0.0, swap_short_pct=0.0):
+                 swap_long_pct=0.0, swap_short_pct=0.0, inverse_quote=False):
         self.balance = float(starting_equity)
+        # inverse_quote: the account currency is the pair's BASE (USD account, USD/JPY).
+        # Price moves are in the quote currency (JPY), so P/L is converted at the exit
+        # price; per-lot swaps are then already in account currency.
+        self.inverse_quote = bool(inverse_quote)
         # Alternative financing model: annual % of position value (e.g. gold longs
         # ~ -6.5%/yr). Charged per night like the per-lot swap (Wed x3).
         self.swap_long_pct = float(swap_long_pct) / 100 / 365
@@ -156,7 +160,7 @@ class SimBroker(Broker):
             rate = self.swap_long if self._pos.side == 1 else self.swap_short
             pct = self.swap_long_pct if self._pos.side == 1 else self.swap_short_pct
             px = self._bar.close if self._bar is not None else self._pos.entry_price
-            amt = (rate + pct * px) * self._pos.units * nights
+            amt = (rate + pct * (1.0 if self.inverse_quote else px)) * self._pos.units * nights
             self.balance += amt
             self._pos.swap += amt
         self._roll_key = key
@@ -167,7 +171,8 @@ class SimBroker(Broker):
 
     def _pnl_at(self, px):
         p = self._pos
-        return p.side * (px - p.entry_price) * p.units
+        gross = p.side * (px - p.entry_price) * p.units
+        return gross / px if self.inverse_quote else gross
 
     def _exit(self, t, px, reason):
         p = self._pos
@@ -176,7 +181,8 @@ class SimBroker(Broker):
         self.balance += gross - comm
         total_comm = comm + p.entry_commission
         net = gross - total_comm + p.swap          # swap already booked to balance nightly
-        r = net / (p.risk_per_unit * p.units)
+        risk_money = p.risk_per_unit * p.units / (p.entry_price if self.inverse_quote else 1.0)
+        r = net / risk_money
         self.trades.append(Trade(p.side, p.units, p.entry_time, p.entry_price, t, px,
                                  net, total_comm, r, reason, p.tag, p.swap))
         self._pos = None

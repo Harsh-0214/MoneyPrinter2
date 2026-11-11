@@ -23,7 +23,13 @@ MARKETS = {
     "GBPUSD": ("data/GBPUSD_M1_histdata.csv", 0.0001, 2.0, 1000, "EURUSD"),
     "AUDUSD": ("data/AUDUSD_M1_histdata.csv", 0.0001, 1.5, 1000, None),
     "XAUUSD": ("data/XAUUSD_M1_histdata.csv", 0.1,   10.0, 1,    None),   # $1.00 spread
+    "USDJPY": ("data/USDJPY_M1_histdata.csv", 0.01,  1.6, 1000, None),    # FOREX.com ~1.6 pips
 }
+
+# USD-base pairs (USD/JPY): P/L is in JPY, converted to the USD account at the exit price
+# (instrument.inverse_quote). Swaps in USD per 100k per night: long USDJPY earned carry in
+# 2021-25; pessimistic: longs get nothing, shorts pay ~$10.
+QUOTE_FIX = {"USDJPY": dict(swap_long_per_lot=0.0, swap_short_per_lot=-10.0)}
 
 # Overnight financing for non-FX instruments, annual % of position value (long, short).
 # Pessimistic: both sides pay. FOREX.com demo reports 0 swap, so this is an estimate.
@@ -55,6 +61,9 @@ VBO = dict(name="vol_breakout", k=0.5, entry_start="07:00", entry_end="16:00", e
            stop_range=0.5, trend_sma=50, skip_days=[0])
 NRB = dict(name="nr_breakout", pattern="nr7", entry_start="07:00", entry_end="16:00",
            exit_time="21:00", target_rr=2.0, trend_sma=50, trail_to_breakeven_rr=1.0)
+ORB_TK = dict(name="opening_range", open_time="00:00", or_minutes=60, entry_end="04:00",
+              exit_time="08:00", target_rr=2.0, daily_trend_filter=True, trail_to_breakeven_rr=1.0,
+              tag="orbtk")          # Tokyo open (09:00 JST = 00:00 London in winter)
 NY_SWEEP = _v(SWEEP, range_start="08:00", range_end="12:00", sweep_window_start="13:00",
               sweep_window_end="15:00", entry_cutoff="15:30", session_exit="19:00")
 
@@ -109,6 +118,18 @@ STRATS = {
                                                                entry_days=55, exit_days=20, stop_atr=3.0)], 1),
     "Trend follow Donchian 20/10":     ("1h", "morning", [dict(name="trend_follow", signal="donchian",
                                                                entry_days=20, exit_days=10, stop_atr=3.0)], 1),
+    "ORB Tokyo 60m":                   ("5min", "morning", [ORB_TK], 1),
+    "ORB Tokyo 30m":                   ("5min", "morning", [_v(ORB_TK, or_minutes=30)], 1),
+    "ORB Tokyo 60m no trend":          ("5min", "morning", [_v(ORB_TK, daily_trend_filter=False)], 1),
+    "Trend Donchian 55/20 both 2ATR":  ("1h", "morning", [dict(name="trend_follow", signal="donchian",
+                                                               entry_days=55, exit_days=20, stop_atr=2.0)], 1),
+    "Trend Donchian 20/10 both 2ATR":  ("1h", "morning", [dict(name="trend_follow", signal="donchian",
+                                                               entry_days=20, exit_days=10, stop_atr=2.0)], 1),
+    "Trend Donchian 40/15 long 2ATR":  ("1h", "morning", [dict(name="trend_follow", signal="donchian",
+                                                               entry_days=40, exit_days=15, stop_atr=2.0,
+                                                               long_only=True)], 1),
+    "Trend Donchian 40/15 both 2ATR":  ("1h", "morning", [dict(name="trend_follow", signal="donchian",
+                                                               entry_days=40, exit_days=15, stop_atr=2.0)], 1),
     "Trend follow EMA 20/100":         ("1h", "morning", [dict(name="trend_follow", signal="ema",
                                                                ema_fast=20, ema_slow=100, exit_days=None,
                                                                stop_atr=3.0)], 1),
@@ -164,6 +185,10 @@ def _run(job):
         c["costs"]["swap_long_per_lot"] = c["costs"]["swap_short_per_lot"] = 0.0
         c["costs"]["swap_long_pct"], c["costs"]["swap_short_pct"] = SWAP_PCT[sym]
     c["instrument"] = {"pip": pip, "min_units": min_units}
+    if sym in QUOTE_FIX:
+        q = QUOTE_FIX[sym]
+        c["instrument"]["inverse_quote"] = True
+        c["costs"]["swap_long_per_lot"], c["costs"]["swap_short_per_lot"] = q["swap_long_per_lot"], q["swap_short_per_lot"]
     c["strategies"] = {"morning": [], "afternoon": []}
     c["strategies"][slot] = [_scale_spec(s, _SCALE[sym]) for s in specs]
     c["slot_max_trades"] = limit
