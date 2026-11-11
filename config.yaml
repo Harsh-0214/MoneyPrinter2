@@ -24,7 +24,8 @@ costs:
                                      # raw/ECN accounts: often ~3.5 USD
 
 risk:
-  risk_per_trade_pct: 0.5     # % of equity lost if the stop is hit
+  risk_per_trade_pct: 1.0     # % of equity lost if the stop is hit (was 0.5; 1% backtest:
+                              #   ~5.5%/yr, max DD -13.4% over 2021-25)
   max_daily_loss_pct: 2.0     # kill switch: no new trades today after this loss
   max_leverage: 10            # hard cap on position notional / equity
   min_units: 1000             # size is rounded down to micro lots (1,000 units)
@@ -187,5 +188,5 @@ live:
   symbol_suffix: "."         # FOREX.com Canada uses a trailing dot (EURUSD., GBPUSD.)
   server_tz: "Europe/Helsinki"  # broker server timezone (MT5 uses this for bar timestamps)
   magic: 12345               # base magic; each pair uses magic + its index in pairs:
-  equity_cap: 10000          # size trades as if the account were this big (null = use real equity)
+  equity_cap: 50000          # size trades as if the account were this big (null = use real equity)
   allow_live: false          # must be true AND --allow-live flag set to run on a real account

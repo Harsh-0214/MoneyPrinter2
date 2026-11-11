@@ -14,6 +14,7 @@ Credentials are loaded from .env (see .env.example).
 """
 import argparse
 import logging
+import os
 import time
 import zoneinfo
 from datetime import datetime, timedelta, timezone
@@ -416,6 +417,25 @@ def run(cfg, pair="EURUSD", dry_run=False, allow_live=False):
             time.sleep(60)
 
 
+def _single_instance_lock(pair):
+    """Exclusive lock file per pair; returns the open handle, or None if taken.
+    The OS releases it automatically when the process exits (even on a crash)."""
+    Path("logs").mkdir(exist_ok=True)
+    f = open(f"logs/.run_live_{pair}.lock", "a+")
+    try:
+        if os.name == "nt":
+            import msvcrt
+            f.seek(0)
+            msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        f.close()
+        return None
+    return f
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default="config.yaml")
@@ -426,6 +446,11 @@ def main():
 
     global log
     log = _setup_logging(args.pair)
+    lock = _single_instance_lock(args.pair)        # keep the handle open for the process life
+    if lock is None:
+        log.error("Another run_live.py is already running for %s - exiting so trades "
+                  "aren't doubled. Close the other one first.", args.pair)
+        raise SystemExit(2)
     cfg = yaml.safe_load(open(args.config))
     if args.allow_live and not cfg["live"].get("allow_live", False):
         raise SystemExit("--allow-live also requires live.allow_live: true in config.yaml")

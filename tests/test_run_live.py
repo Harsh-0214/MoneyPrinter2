@@ -71,6 +71,16 @@ def test_closed_trade_logged(caplog):
                for r in caplog.records)
 
 
+def test_single_instance_lock():
+    a = run_live._single_instance_lock("TESTPAIR")
+    assert a is not None
+    assert run_live._single_instance_lock("TESTPAIR") is None     # second copy refused
+    a.close()
+    b = run_live._single_instance_lock("TESTPAIR")                # free again after release
+    assert b is not None
+    b.close()
+
+
 def test_build_morning_uses_strategy_stack():
     cfg = yaml.safe_load(open("config.yaml"))
     names = [type(s).__name__ for s in run_live._build_morning(cfg)]
