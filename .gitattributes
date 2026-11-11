@@ -1,1 +1,4 @@
 *.bat text eol=crlf
+*.pdf binary
+*.png binary
+*.ex5 binary
