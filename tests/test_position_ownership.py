@@ -17,7 +17,7 @@ class _Broker:
         self.stop_moves, self.closes = [], []
 
     def position(self): return self.pos
-    def update_stop(self, px): self.stop_moves.append(px)
+    def update_stop(self, px, take_profit=None): self.stop_moves.append(px)
     def close_position(self, reason=""): self.closes.append(reason)
     def equity(self): return 50000
     def current_spread_pips(self): return 1.0
@@ -80,3 +80,25 @@ def test_breakout_without_time_exit_keeps_position():
     s = LondonBreakout(spec, PIP)
     s.propose(_bar(1.1100), np.datetime64("2024-01-03"), 23 * 60 + 55, b, None)
     assert b.closes == []
+
+
+def test_extend_target_moves_target_and_locks_profit():
+    from fxbot.strategies.proposal import TrailState, extend_target
+    class B:
+        def __init__(self):
+            self.pos = Position(1, 10000, 1.1000, pd.Timestamp("2024-01-03 09:00", tz="UTC"),
+                                1.0950, 1.1100, 0.0050, 0.0, "long_break")       # 1R = 50p, target 2R
+            self.calls = []
+        def position(self): return self.pos
+        def update_stop(self, px, take_profit=None):
+            self.calls.append((round(px, 5), take_profit and round(take_profit, 5)))
+            self.pos.stop_loss = px
+            if take_profit is not None: self.pos.take_profit = take_profit
+    b, tr = B(), TrailState()
+    near = SimpleNamespace(high=1.1092, low=1.1060, close=1.1090)               # 90% there, strong close
+    tr.update(b.pos, near)
+    assert extend_target(b.pos, b, near, tr, 0.8, 1.0, 1.0, momentum=0.6) is True
+    assert b.calls[-1] == (1.104, 1.115)                                        # stop 1R behind, target +1R
+    weak = SimpleNamespace(high=1.1140, low=1.1060, close=1.1070)               # far from new target
+    assert extend_target(b.pos, b, weak, tr, 0.8, 1.0, 1.0, momentum=0.6) is False
+    assert extend_target(b.pos, b, near, tr, 0.0, 1.0, 1.0) is False            # off by default

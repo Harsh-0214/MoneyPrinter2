@@ -29,7 +29,7 @@ from datetime import time
 from typing import Optional
 
 from ..brokers.base import Order
-from .proposal import TradeProposal, manages
+from .proposal import TradeProposal, TrailState, extend_target, manages
 
 
 def _minutes(hhmm):
@@ -74,6 +74,12 @@ class LondonSweep:
         # Trailing stop: move stop to breakeven when price moves this many R in our favour.
         # 0 = disabled.
         self.trail_be_rr  = float(cfg.get("trail_to_breakeven_rr", 0.0))
+        # "Let it run": near the target with momentum -> move target out, lock profit
+        self.ext_trigger  = float(cfg.get("extend_trigger", 0.0))
+        self.ext_step_r   = float(cfg.get("extend_step_r", 1.0))
+        self.ext_lock_r   = float(cfg.get("extend_lock_r", 1.0))
+        self.ext_momentum = float(cfg.get("extend_momentum", 0.0))
+        self._trail = TrailState()
 
         self.day = None
         self._reset_day(None)
@@ -317,6 +323,7 @@ class LondonSweep:
             # still managed so a position is never left without a session exit.
             if not manages(pos, "london_sweep"):
                 return None
+            self._trail.update(pos, bar)
             # Trailing stop: move stop to breakeven once price is 1R ahead
             # (risk_per_unit is 0 on MT5 once the stop already sits at entry)
             if self.trail_be_rr > 0 and pos.risk_per_unit > 0:
@@ -326,9 +333,14 @@ class LondonSweep:
                     if (pos.side == 1 and new_stop > pos.stop_loss) or \
                        (pos.side == -1 and new_stop < pos.stop_loss):
                         broker.update_stop(new_stop)
+            pos = broker.position()
+            if pos is not None:
+                extend_target(pos, broker, bar, self._trail, self.ext_trigger, self.ext_step_r,
+                              self.ext_lock_r, self.ext_momentum)
             if local_min >= self.session_exit:
                 broker.close_position("session_exit")
             return None
+        self._trail.reset()
 
         if self.asian_hi == float("-inf"):
             return None

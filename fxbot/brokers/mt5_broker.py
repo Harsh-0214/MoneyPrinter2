@@ -208,7 +208,7 @@ class MT5Broker(Broker):
                 "Position closed: ticket=%d fill_price=%.5f", result.order, result.price
             )
 
-    def update_stop(self, new_stop_price: float) -> None:
+    def update_stop(self, new_stop_price: float, take_profit=None) -> None:
         pos = self.position()
         if pos is None:
             return
@@ -216,15 +216,17 @@ class MT5Broker(Broker):
         if ticket is None:
             return
         info = mt5.symbol_info(self._symbol)
+        new_tp = pos.take_profit if take_profit is None else take_profit
         if info is not None:
             new_stop_price = round(new_stop_price, info.digits)
-            if abs(new_stop_price - pos.stop_loss) < info.point / 2:
+            new_tp = round(new_tp, info.digits) if new_tp else new_tp
+            if abs(new_stop_price - pos.stop_loss) < info.point / 2 and                abs((new_tp or 0.0) - (pos.take_profit or 0.0)) < info.point / 2:
                 return                                   # unchanged after rounding
         request = {
             "action": mt5.TRADE_ACTION_SLTP,
             "symbol": self._symbol,
             "sl": new_stop_price,
-            "tp": pos.take_profit or 0.0,
+            "tp": new_tp or 0.0,
             "position": ticket,
         }
         result = mt5.order_send(request)
@@ -233,7 +235,8 @@ class MT5Broker(Broker):
                 "update_stop failed: retcode=%d '%s'", result.retcode, result.comment
             )
         else:
-            self._logger.info("Stop moved to %.5f", new_stop_price)
+            self._logger.info("Stop moved to %.5f%s", new_stop_price,
+                              f", target moved to {new_tp:.5f}" if take_profit is not None else "")
 
     def quote_to_account(self) -> float:
         """Account-currency value of a 1.0 price move per 1 unit traded.

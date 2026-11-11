@@ -67,8 +67,8 @@ class Broker(ABC):
     def close_position(self, reason: str = "manual") -> None: ...
 
     @abstractmethod
-    def update_stop(self, new_stop_price: float) -> None:
-        """Move the stop loss on the current open position (trailing stop support)."""
+    def update_stop(self, new_stop_price: float, take_profit=None) -> None:
+        """Move the stop loss (and, if given, the target) on the current open position."""
 
     @abstractmethod
     def current_spread_pips(self) -> float: ...

@@ -37,7 +37,7 @@ from datetime import time
 from typing import Optional
 
 from ..brokers.base import Order
-from .proposal import TradeProposal, TrailState, manages, trail_stop
+from .proposal import TradeProposal, TrailState, extend_target, manages, trail_stop
 
 
 def _minutes(hhmm):
@@ -71,6 +71,11 @@ class LondonBreakout:
         self.max_defer_ext = _ext * pip if _ext is not None else None
         # Move stop to entry once price is this many R ahead. 0 = disabled.
         self.trail_be_rr  = float(cfg.get("trail_to_breakeven_rr", 0.0))
+        # "Let it run": near the target with momentum -> move target out, lock profit
+        self.ext_trigger  = float(cfg.get("extend_trigger", 0.0))     # 0 = off; e.g. 0.8 of the way
+        self.ext_step_r   = float(cfg.get("extend_step_r", 1.0))      # target moves this many R further
+        self.ext_lock_r   = float(cfg.get("extend_lock_r", 1.0))      # stop goes this many R behind price
+        self.ext_momentum = float(cfg.get("extend_momentum", 0.0))    # bar must close in top X of its range
         self.daily_trend_filter = cfg.get("daily_trend_filter", False)
         # Trailing stop: after trail_start_r R of profit, keep the stop trail_dist_r R
         # behind the best price reached (0 = off).
@@ -157,6 +162,10 @@ class LondonBreakout:
                     broker.update_stop(be)
                     pos = broker.position()
         trail_stop(pos, broker, self._trail, self.trail_start_r, self.trail_dist_r)
+        pos = broker.position()
+        if pos is not None:
+            extend_target(pos, broker, bar, self._trail, self.ext_trigger, self.ext_step_r,
+                          self.ext_lock_r, self.ext_momentum)
 
     def _stop_price(self, side, entry_est, bar, spread_px):
         """Stop for a breakout: range wall, range midpoint, or ATR multiple."""

@@ -92,3 +92,30 @@ def move_stop_to_breakeven(position, broker, bar_close, trigger_r):
         if (position.side == 1 and be > position.stop_loss) or \
            (position.side == -1 and be < position.stop_loss):
             broker.update_stop(be)
+
+
+def extend_target(position, broker, bar, trail, trigger, step_r, lock_r, momentum=0.0):
+    """'Let it run': when a trade with a target is at least `trigger` of the way
+    there at a bar close (and, if momentum > 0, the bar closed in the top
+    `momentum` share of its range in the trade's direction), push the target
+    `step_r` R further out and pull the stop to `lock_r` R behind the close
+    (never loosening it). Repeats on later bars while the move keeps going.
+    R = the trade's ORIGINAL risk (trail.init_risk). trigger <= 0 disables it.
+    Returns True if it moved anything."""
+    tp, r = position.take_profit, trail.init_risk
+    if trigger <= 0 or tp is None or not r:
+        return False
+    side, entry = position.side, position.entry_price
+    total = (tp - entry) * side
+    if total <= 0 or (bar.close - entry) * side / total < trigger:
+        return False
+    if momentum > 0:
+        rng = bar.high - bar.low
+        strength = ((bar.close - bar.low) if side == 1 else (bar.high - bar.close)) / rng if rng > 0 else 1.0
+        if strength < momentum:
+            return False
+    new_tp = tp + side * step_r * r
+    lock = bar.close - side * lock_r * r
+    new_sl = lock if (lock - position.stop_loss) * side > 0 else position.stop_loss
+    broker.update_stop(new_sl, take_profit=new_tp)
+    return True

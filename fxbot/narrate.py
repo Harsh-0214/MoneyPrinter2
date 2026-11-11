@@ -91,10 +91,13 @@ class NarratingBroker:
             "Filled." if ok else "NOT sent/filled (see the log file for the reason).")
         return ok
 
-    def update_stop(self, new_stop_price):
+    def update_stop(self, new_stop_price, take_profit=None):
         pos = self._b.position()
-        self._b.update_stop(new_stop_price)
-        if pos is not None and abs(new_stop_price - pos.entry_price) < self.pip / 2:
+        self._b.update_stop(new_stop_price, take_profit)
+        if take_profit is not None:
+            say("%s: the move is still going strong near the target, so it moved the target further "
+                "to %.5f and locked in profit with the stop at %.5f.", self.who, take_profit, new_stop_price)
+        elif pos is not None and abs(new_stop_price - pos.entry_price) < self.pip / 2:
             say("%s moved the stop to the entry price. This trade can no longer lose.", self.who)
         else:
             say("%s moved the stop to %.5f to lock in more of the move.", self.who, new_stop_price)

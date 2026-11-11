@@ -11,7 +11,7 @@ class _Broker:
         self.pos, self.submitted, self.stops, self.closes = None, [], [], []
     def submit(self, o): self.submitted.append(o); return True
     def position(self): return self.pos
-    def update_stop(self, px): self.stops.append(px)
+    def update_stop(self, px, take_profit=None): self.stops.append(px)
     def close_position(self, r="manual"): self.closes.append(r)
     def equity(self): return 50000.0
     def current_spread_pips(self): return 1.4

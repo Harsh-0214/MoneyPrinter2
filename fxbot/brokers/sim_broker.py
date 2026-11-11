@@ -74,9 +74,11 @@ class SimBroker(Broker):
         if self._pos is not None:
             self._pending_close = reason
 
-    def update_stop(self, new_stop_price: float) -> None:
+    def update_stop(self, new_stop_price: float, take_profit=None) -> None:
         if self._pos is not None:
             self._pos.stop_loss = new_stop_price
+            if take_profit is not None:
+                self._pos.take_profit = take_profit
 
     def current_spread_pips(self):
         return float(self._bar.spread_pips) if self._bar is not None else 0.0

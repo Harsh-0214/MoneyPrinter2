@@ -73,8 +73,9 @@ class DryRunBroker:
     def close_position(self, reason="manual"):
         log.info("DRY RUN: would close position reason=%s", reason)
 
-    def update_stop(self, new_stop_price):
-        log.info("DRY RUN: would move stop to %.5f", new_stop_price)
+    def update_stop(self, new_stop_price, take_profit=None):
+        log.info("DRY RUN: would move stop to %.5f%s", new_stop_price,
+                 f" and target to {take_profit:.5f}" if take_profit is not None else "")
 
     def shutdown(self):
         self._b.shutdown()
@@ -103,7 +104,7 @@ class CappedEquityBroker:
     def current_spread_pips(self): return self._b.current_spread_pips()
     def submit(self, order): return self._b.submit(order)
     def close_position(self, reason="manual"): return self._b.close_position(reason)
-    def update_stop(self, new_stop_price): return self._b.update_stop(new_stop_price)
+    def update_stop(self, new_stop_price, take_profit=None): return self._b.update_stop(new_stop_price, take_profit)
     def shutdown(self): return self._b.shutdown()
 
     @property
@@ -148,7 +149,7 @@ class PortfolioRiskGuard:
     def position(self): return self._b.position()
     def current_spread_pips(self): return self._b.current_spread_pips()
     def close_position(self, reason="manual"): return self._b.close_position(reason)
-    def update_stop(self, new_stop_price): return self._b.update_stop(new_stop_price)
+    def update_stop(self, new_stop_price, take_profit=None): return self._b.update_stop(new_stop_price, take_profit)
     def shutdown(self): return self._b.shutdown()
 
     @property
@@ -205,7 +206,7 @@ class MarginGuard:
     def position(self): return self._b.position()
     def current_spread_pips(self): return self._b.current_spread_pips()
     def close_position(self, reason="manual"): return self._b.close_position(reason)
-    def update_stop(self, new_stop_price): return self._b.update_stop(new_stop_price)
+    def update_stop(self, new_stop_price, take_profit=None): return self._b.update_stop(new_stop_price, take_profit)
     def shutdown(self): return self._b.shutdown()
 
     @property
@@ -234,7 +235,7 @@ class SpreadGuard:
     def position(self): return self._b.position()
     def current_spread_pips(self): return self._b.current_spread_pips()
     def close_position(self, reason="manual"): return self._b.close_position(reason)
-    def update_stop(self, new_stop_price): return self._b.update_stop(new_stop_price)
+    def update_stop(self, new_stop_price, take_profit=None): return self._b.update_stop(new_stop_price, take_profit)
     def shutdown(self): return self._b.shutdown()
 
     @property
@@ -295,7 +296,7 @@ class DrawdownBreaker:
     def position(self): return self._b.position()
     def current_spread_pips(self): return self._b.current_spread_pips()
     def close_position(self, reason="manual"): return self._b.close_position(reason)
-    def update_stop(self, new_stop_price): return self._b.update_stop(new_stop_price)
+    def update_stop(self, new_stop_price, take_profit=None): return self._b.update_stop(new_stop_price, take_profit)
     def shutdown(self): return self._b.shutdown()
 
     @property
@@ -362,7 +363,7 @@ class _NoOrderBroker:
     def current_spread_pips(self): return self._b.current_spread_pips()
     def submit(self, order): return False
     def close_position(self, reason=""): pass
-    def update_stop(self, new_stop_price): pass
+    def update_stop(self, new_stop_price, take_profit=None): pass
 
 
 def _sleep_to_next_bar(timeframe_minutes=5):
