@@ -156,6 +156,63 @@ class PortfolioRiskGuard:
         return self._b.trades
 
 
+class MarginGuard:
+    """Keeps the WHOLE account's margin use under live.max_margin_used_pct of equity.
+
+    At 3% risk a tight-stop trade can need more leverage than the broker allows
+    (FOREX.com: 20:1 FX, 5:1 gold), and several bots open at once could push the
+    margin level toward the broker's stop-out (100%). Before each entry this asks
+    MT5 what the trade needs; if it doesn't fit, the trade is shrunk to fit, or
+    skipped if it would be under min_fraction of its intended size.
+    """
+
+    def __init__(self, broker, mt5, symbol, max_used_frac, who, min_fraction=0.25):
+        self._b, self._mt5, self._symbol = broker, mt5, symbol
+        self._max, self.who, self._min_f = max_used_frac, who, min_fraction
+
+    def _needed(self, units, side):
+        mt5 = self._mt5
+        info, tick = mt5.symbol_info(self._symbol), mt5.symbol_info_tick(self._symbol)
+        if info is None or tick is None:
+            return None
+        lots = units / (info.trade_contract_size or 100000)
+        price = tick.ask if side == 1 else tick.bid
+        typ = mt5.ORDER_TYPE_BUY if side == 1 else mt5.ORDER_TYPE_SELL
+        return mt5.order_calc_margin(typ, self._symbol, lots, price)
+
+    def submit(self, order):
+        acct = self._mt5.account_info()
+        need = self._needed(order.units, order.side)
+        if acct is None or not need or need <= 0:
+            return self._b.submit(order)              # can't check: let the broker decide
+        room = self._max * acct.equity - acct.margin
+        if need <= room:
+            return self._b.submit(order)
+        f = max(room, 0.0) / need
+        if f < self._min_f:
+            log.warning("[%s] MARGIN: trade needs %.0f, only %.0f free under the %.0f%% cap - skipped",
+                        self.who, need, max(room, 0.0), self._max * 100)
+            from fxbot import narrate
+            narrate.say("%s skipped a trade: not enough margin left (other trades are open).", self.who)
+            return False
+        old = order.units
+        order.units = int(order.units * f)
+        log.warning("[%s] MARGIN: trade shrunk %d -> %d units to keep margin use under %.0f%%",
+                    self.who, old, order.units, self._max * 100)
+        return self._b.submit(order)
+
+    def equity(self): return self._b.equity()
+    def position(self): return self._b.position()
+    def current_spread_pips(self): return self._b.current_spread_pips()
+    def close_position(self, reason="manual"): return self._b.close_position(reason)
+    def update_stop(self, new_stop_price): return self._b.update_stop(new_stop_price)
+    def shutdown(self): return self._b.shutdown()
+
+    @property
+    def trades(self):
+        return self._b.trades
+
+
 class SpreadGuard:
     """Skips a new entry while the live spread is abnormally wide (news spikes,
     rollover, thin markets). Limit = live.max_spread_mult x the pair's normal spread."""
@@ -540,6 +597,9 @@ class StrategyRunner:
         if max_open:
             broker = guard = PortfolioRiskGuard(broker, mt5, self.all_magics,
                                                 float(max_open) / 100 * base, risk_money)
+        max_margin = cfg["live"].get("max_margin_used_pct")
+        if max_margin:
+            broker = MarginGuard(broker, mt5, self.symbol, float(max_margin) / 100, self.label)
         max_dd = cfg["live"].get("max_drawdown_pct")
         if max_dd:
             broker = DrawdownBreaker(broker, mt5, base, float(max_dd), self.label)
@@ -740,8 +800,9 @@ def run(cfg, pair="EURUSD", dry_run=False, allow_live=False, sleeve=None):
             log.info("Account currency %s: 1 %s move per unit = %.4f %s (sizing uses this)",
                      acct.currency, symbol[3:6], runners[0].risk.quote_to_account, acct.currency)
             risk_money = float(cfg["risk"]["risk_per_trade_pct"]) / 100 * float(cap or acct.equity)
-            narrate.say("Ready. Account is in %s (1 USD = %.2f %s). Each trade risks about %s %s.",
-                        acct.currency, runners[0].risk.quote_to_account, acct.currency,
+            q2a = runners[0].risk.quote_to_account
+            narrate.say("Ready. Account is in %s (1 %s = %s %s). Each trade risks about %s %s.",
+                        acct.currency, symbol[3:6], f"{q2a:.2f}" if q2a >= 0.1 else f"{q2a:.4f}", acct.currency,
                         f"{risk_money:,.0f}", acct.currency)
             for r in runners:                       # what each strategy sees right now
                 for st in r.last_status.values():

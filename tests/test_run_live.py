@@ -162,3 +162,23 @@ def test_build_morning_uses_strategy_stack():
     cfg = yaml.safe_load(open("config.yaml"))
     names = [type(s).__name__ for s in run_live._build_morning(cfg)]
     assert names == ["LondonSweep", "LondonBreakout"]
+
+
+def test_margin_guard_shrinks_or_skips():
+    from fxbot.brokers.base import Order
+    class M:
+        ORDER_TYPE_BUY, ORDER_TYPE_SELL = 0, 1
+        margin = 20000.0
+        def account_info(self): return SimpleNamespace(equity=50000.0, margin=M.margin)
+        def symbol_info(self, s): return SimpleNamespace(trade_contract_size=100000)
+        def symbol_info_tick(self, s): return SimpleNamespace(ask=1.1, bid=1.1)
+        def order_calc_margin(self, t, s, lots, px): return lots * 100000 * px / 20   # 20:1
+    class B:
+        sent = []
+        def submit(self, o): B.sent.append(o.units); return True
+    g = run_live.MarginGuard(B(), M(), "EURUSD.", 0.70, "London")
+    assert g.submit(Order(1, 100000, 1.09)) is True and B.sent[-1] == 100000     # needs 5.5k, room 15k
+    assert g.submit(Order(1, 400000, 1.09)) is True                               # needs 22k -> shrunk
+    assert 270000 < B.sent[-1] < 275000                                           # 15k / 22k of 400k
+    M.margin = 33000.0                                                            # room 2k
+    assert g.submit(Order(1, 400000, 1.09)) is False and len(B.sent) == 2         # < 25% fits: skipped

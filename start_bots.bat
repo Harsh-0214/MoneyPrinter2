@@ -4,6 +4,7 @@ rem Each market bot runs ALL of that market's strategies and trades whichever
 rem one has a setup:
 rem   EURUSD / GBPUSD : London Sweep + Breakout (5 min) and daily swing pullback (1 h)
 rem   XAUUSD          : gold trend 55-day and 20-day (1 h)
+rem   USDJPY          : volatility breakout (15 min)
 rem Can run automatically at Windows login (Task Scheduler task "MoneyPrinter2 bots").
 cd /d "%~dp0"
 
@@ -15,7 +16,7 @@ if errorlevel 1 (
     timeout /t 45 /nobreak >nul
 )
 
-for %%B in (EURUSD GBPUSD XAUUSD) do (
+for %%B in (EURUSD GBPUSD XAUUSD USDJPY) do (
     start "fxbot %%B" cmd /k ""%~dp0run_forever.bat" %%B"
     timeout /t 3 /nobreak >nul
 )

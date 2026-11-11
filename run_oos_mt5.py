@@ -19,14 +19,14 @@ from run_validate import summarize
 
 cfg = yaml.safe_load(open("config.yaml"))
 mt5.initialize()
-TF = {"5min": mt5.TIMEFRAME_M5, "1h": mt5.TIMEFRAME_H1}
-BROKER = {"EURUSD": "EURUSD.", "GBPUSD": "GBPUSD.", "XAUUSD": "XAUUSD"}
+TF = {"5min": mt5.TIMEFRAME_M5, "15min": mt5.TIMEFRAME_M15, "1h": mt5.TIMEFRAME_H1}
+BROKER = {"EURUSD": "EURUSD.", "GBPUSD": "GBPUSD.", "XAUUSD": "XAUUSD", "USDJPY": "USDJPY."}
 cache = {}
 
 
 def bars(sym, tf):
     if (sym, tf) not in cache:
-        r = mt5.copy_rates_from_pos(BROKER[sym], TF[tf], 0, 99000 if tf == "5min" else 12000)
+        r = mt5.copy_rates_from_pos(BROKER[sym], TF[tf], 0, {"5min": 99000, "15min": 60000}.get(tf, 12000))
         if r is None or len(r) == 0:
             raise SystemExit(f"no MT5 history for {sym} {tf}: {mt5.last_error()}")
         df = pd.DataFrame(r)

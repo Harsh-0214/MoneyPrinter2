@@ -24,10 +24,13 @@ costs:
                                      # raw/ECN accounts: often ~3.5 USD
 
 risk:
-  risk_per_trade_pct: 1.0     # % of equity lost if the stop is hit (was 0.5; 1% backtest:
+  risk_per_trade_pct: 3.0     # % of equity lost if the stop is hit. Nov 2026: 3% targets ~5%/month
+                              #   (2021-25 sim with broker margin limits: avg 5.2%/mo, max DD -32%,
+                              #   1-in-20 bad case -37%, 1-in-100 -46%; 2026: avg 4.9%/mo, DD -9%).
+                              #   Was 1% (avg ~1.9%/mo, max DD -12%). Earlier note: (was 0.5; 1% backtest:
                               #   ~5.5%/yr, max DD -13.4% over 2021-25)
-  max_daily_loss_pct: 2.0     # kill switch: no new trades today after this loss
-  max_leverage: 10            # hard cap on position notional / equity
+  max_daily_loss_pct: 6.0     # kill switch: no new trades today after this loss (2 full losses at 3%)
+  max_leverage: 14            # hard cap on position notional / equity (70% of FOREX.com's 20:1 on FX)
   min_units: 1000             # size is rounded down to micro lots (1,000 units)
   news_file: null             # optional CSV of high-impact news times (UTC), column "time"
                               #   (legacy; applies to every market, honoured even with news_filter off)
@@ -261,6 +264,37 @@ pairs:
               long_only: true
           afternoon: []
 
+  # --- USD/JPY: volatility breakout (Nov 2026 research, run_arsenal.py + grid) ---
+  # Day's open +/- 0.9 x yesterday's range, 07:00-16:00 London, only with the 50-day
+  # trend; stop 0.5 x yesterday's range; exit 21:00. All 96 grid settings profitable
+  # 2021-25; this one: +31%, PF 1.56, DD -7.9%, 4/5 years. 2026 out-of-sample +4.2%,
+  # PF 1.47. Monthly correlation with the rest of the portfolio -0.08.
+  - symbol: USDJPY
+    spread_pips: 1.6             # FOREX.com demo, Nov 2026
+    instrument:
+      pip: 0.01
+      min_units: 1000
+      inverse_quote: true        # backtest: P/L in JPY converted to the USD account (live uses MT5)
+    data:
+      path: data/USDJPY_M1_histdata.csv
+      source_tz: "UTC"
+      timeframe: 15min
+    costs:                       # pessimistic: longs earn no carry, shorts pay ~$10/lot/night
+      swap_long_per_lot: 0.0
+      swap_short_per_lot: -10.0
+    warmup_days: 100             # live: replay ~100 days to rebuild the 50-day trend
+    strategies:
+      morning:
+        - name: vol_breakout
+          k: 0.9
+          entry_start: "07:00"
+          entry_end: "16:00"
+          exit_time: "21:00"
+          stop_range: 0.5
+          trend_sma: 50
+          skip_days: [0]
+      afternoon: []
+
   # AUDUSD tested Nov 2026 with unchanged params: 2021-23 +0.0%, 2024-25 +5.1%,
   # breakeven at 1.5-pip spread. Adds ~1%/yr but raises max DD -10.6% -> -13.4%.
   # Left disabled. Uncomment to include (no SMT partner -> SMT filter passes).
@@ -278,10 +312,13 @@ live:
   symbol_suffix: "."         # FOREX.com Canada uses a trailing dot (EURUSD., GBPUSD.)
   server_tz: "Europe/Helsinki"  # broker server timezone (MT5 uses this for bar timestamps)
   magic: 12345               # base magic; each pair uses magic + its index in pairs:
-  max_open_risk_pct: 5.0     # portfolio cap: all bots' open risk combined (on equity_cap) never exceeds this
+  max_open_risk_pct: 12.0    # portfolio cap: all bots' open risk combined (on equity_cap); 4 trades at 3%
+  max_margin_used_pct: 70.0  # shrink/skip entries so all open trades use <= 70% of equity as margin
+                             #   (FOREX.com stops out at 100% margin level, margin call at 120%)
   max_spread_mult: 2.5       # skip a new entry if the live spread > 2.5x the pair's normal spread_pips
                              #   (EURUSD 3.5 pips, GBPUSD 5.0, gold $2.00)
-  max_drawdown_pct: 15.0     # circuit breaker: no new trades once the account is 15% (of equity_cap)
+  max_drawdown_pct: 40.0     # circuit breaker: no new trades once the account is 40% (of equity_cap)
+                             #   below its peak (past the 1-in-20 bad case at 3% risk, -37%).
                              #   below its peak. Resume: delete data/state/peak_equity.json
   equity_cap: 50000          # size trades as if the account were this big (null = use real equity)
   allow_live: false          # must be true AND --allow-live flag set to run on a real account
