@@ -39,6 +39,45 @@ def manages(position, strategy_name):
     return not tag.startswith(_ALL)
 
 
+class TrailState:
+    """Per-strategy trailing-stop memory for the open position.
+
+    Remembers the trade's ORIGINAL risk (MT5 reports a shrinking risk once the
+    stop moves) and the best price reached since entry.
+    """
+
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.init_risk = None
+        self.best = None
+
+    def update(self, position, bar):
+        if self.init_risk is None:
+            self.init_risk = position.risk_per_unit if position.risk_per_unit > 0 else None
+        hi, lo = bar.high, bar.low
+        if position.side == 1:
+            self.best = hi if self.best is None else max(self.best, hi)
+        else:
+            self.best = lo if self.best is None else min(self.best, lo)
+
+
+def trail_stop(position, broker, trail, start_r, dist_r):
+    """Once the trade has been start_r R in profit, keep the stop dist_r R behind the
+    best price reached. Only ever tightens. start_r <= 0 disables it."""
+    if start_r <= 0 or trail.init_risk is None or trail.best is None:
+        return
+    r = trail.init_risk
+    peak_r = (trail.best - position.entry_price) * position.side / r
+    if peak_r < start_r:
+        return
+    new_stop = trail.best - position.side * dist_r * r
+    if (position.side == 1 and new_stop > position.stop_loss + 1e-9) or \
+       (position.side == -1 and new_stop < position.stop_loss - 1e-9):
+        broker.update_stop(new_stop)
+
+
 def move_stop_to_breakeven(position, broker, bar_close, trigger_r):
     """Move the stop to entry once price is trigger_r R in profit (0 = off)."""
     if trigger_r <= 0 or position.risk_per_unit <= 0:   # MT5 reports 0 once at entry

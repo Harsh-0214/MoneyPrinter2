@@ -37,7 +37,7 @@ from datetime import time
 from typing import Optional
 
 from ..brokers.base import Order
-from .proposal import TradeProposal, manages
+from .proposal import TradeProposal, TrailState, manages, trail_stop
 
 
 def _minutes(hhmm):
@@ -71,6 +71,11 @@ class LondonBreakout:
         # Move stop to entry once price is this many R ahead. 0 = disabled.
         self.trail_be_rr  = float(cfg.get("trail_to_breakeven_rr", 0.0))
         self.daily_trend_filter = cfg.get("daily_trend_filter", False)
+        # Trailing stop: after trail_start_r R of profit, keep the stop trail_dist_r R
+        # behind the best price reached (0 = off).
+        self.trail_start_r = float(cfg.get("trail_start_r", 0.0))
+        self.trail_dist_r  = float(cfg.get("trail_dist_r", 1.0))
+        self._trail = TrailState()
         self.day          = None
         self._reset_day(None)
 
@@ -140,18 +145,17 @@ class LondonBreakout:
     # ------------------------------------------------------------------ #
 
     def _manage_open(self, bar, broker):
-        """Breakeven stop management for an open position."""
-        if self.trail_be_rr <= 0:
-            return
+        """Breakeven + trailing stop for an open position (uses the ORIGINAL risk)."""
         pos = broker.position()
-        if pos.risk_per_unit <= 0:      # MT5 reports 0 once stop == entry
-            return
-        profit_in_r = (bar.close - pos.entry_price) * pos.side / pos.risk_per_unit
-        if profit_in_r >= self.trail_be_rr:
-            new_stop = pos.entry_price
-            if (pos.side == 1 and new_stop > pos.stop_loss) or \
-               (pos.side == -1 and new_stop < pos.stop_loss):
-                broker.update_stop(new_stop)
+        self._trail.update(pos, bar)
+        r = self._trail.init_risk
+        if self.trail_be_rr > 0 and r:
+            if (bar.close - pos.entry_price) * pos.side / r >= self.trail_be_rr:
+                be = pos.entry_price
+                if (pos.side == 1 and be > pos.stop_loss) or (pos.side == -1 and be < pos.stop_loss):
+                    broker.update_stop(be)
+                    pos = broker.position()
+        trail_stop(pos, broker, self._trail, self.trail_start_r, self.trail_dist_r)
 
     def _stop_price(self, side, entry_est, bar, spread_px):
         """Stop for a breakout: range wall, range midpoint, or ATR multiple."""
@@ -220,6 +224,7 @@ class LondonBreakout:
             if local_min >= self.session_exit:
                 broker.close_position("session_exit")
             return None
+        self._trail.reset()
 
         if self.hi == float("-inf"):
             return None

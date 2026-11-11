@@ -50,6 +50,20 @@ def test_breakout_ignores_sweep_position():
     assert b.stop_moves == [] and b.closes == []
 
 
+def test_trailing_stop_only_tightens():
+    from fxbot.strategies.proposal import TrailState, trail_stop
+    b = _Broker("long_break")                        # long 1.1000, stop 1.0950 -> 1R = 50 pips
+    tr = TrailState()
+    for hi in (1.1040, 1.1060, 1.1100, 1.1080):      # peak +2R, then a pullback
+        bar = SimpleNamespace(high=hi, low=hi - 0.0005)
+        tr.update(b.pos, bar)
+        trail_stop(b.pos, b, tr, start_r=1.0, dist_r=0.5)
+        if b.stop_moves:
+            b.pos.stop_loss = b.stop_moves[-1]
+    # starts at +1.2R (1.1060 - 25p = 1.1035), then peak 1.1100 -> 1.1075; never loosens
+    assert [round(x, 5) for x in b.stop_moves] == [1.1035, 1.1075]
+
+
 def test_breakout_manages_own_position():
     b = _Broker("long_break")
     s = LondonBreakout(_specs()["london_breakout"], PIP)
