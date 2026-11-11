@@ -250,6 +250,36 @@ pairs:
               stop_atr: 2.0
               long_only: true
           afternoon: []
+      # "Adding to winners" (Nov 2026): on the same signal as the main gold bot, buy a
+      # second position once the trend is +0.5R in profit, stop at the main entry price,
+      # then trail/exit like the main trade. Portfolio sim with margin + risk brake:
+      # 2021-25 avg month 3.9% -> 4.9%, 2026 5.2% -> 7.5%, max DD unchanged (-21%).
+      - name: add55              # magic 12547: adds to the 55-day trend
+        warmup_days: 120
+        strategies:
+          morning:
+            - name: trend_follow
+              signal: donchian
+              entry_days: 55
+              exit_days: 20
+              atr_days: 20
+              stop_atr: 2.0
+              long_only: true
+              add_on_r: 0.5
+          afternoon: []
+      - name: add20              # magic 12647: adds to the 20-day trend
+        warmup_days: 120
+        strategies:
+          morning:
+            - name: trend_follow
+              signal: donchian
+              entry_days: 20
+              exit_days: 10
+              atr_days: 20
+              stop_atr: 2.0
+              long_only: true
+              add_on_r: 0.5
+          afternoon: []
 
   # --- USD/JPY: volatility breakout (Nov 2026 research, run_arsenal.py + grid) ---
   # Day's open +/- 0.9 x yesterday's range, 07:00-16:00 London, only with the 50-day
@@ -315,5 +345,8 @@ live:
   max_drawdown_pct: 28.0     # last resort: no new trades at all 28% below the peak (open trades
                              #   at 0.5% risk can't take it past 30%). Never reached in the tests.
                              #   below its peak. Resume: delete data/state/peak_equity.json
-  equity_cap: 50000          # size trades as if the account were this big (null = use real equity)
+  equity_cap: null           # null = size on the REAL account equity, so profits compound (and losses
+                             #   shrink trades). Nov 2026 sim 2021-25: $50k -> ~$650k vs ~$200k with a
+                             #   fixed $50k cap, max DD -19% vs -21%. Set a number to size as if the
+                             #   account were that big (no compounding).
   allow_live: false          # must be true AND --allow-live flag set to run on a real account

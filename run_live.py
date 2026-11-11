@@ -252,8 +252,9 @@ class DrawdownBreaker:
 
     STATE = Path("data/state/peak_equity.json")
 
-    def __init__(self, broker, mt5, base, max_dd_pct, who):
+    def __init__(self, broker, mt5, base, max_dd_pct, who, compounding=False):
         self._b, self.mt5, self.base, self.max_dd, self.who = broker, mt5, base, max_dd_pct, who
+        self.compounding = compounding
 
     @classmethod
     def peak(cls):
@@ -274,11 +275,7 @@ class DrawdownBreaker:
         return p
 
     def drawdown_pct(self):
-        acct = self.mt5.account_info()
-        p = self.peak()
-        if acct is None or p is None:
-            return 0.0
-        return max(0.0, (p - acct.equity) / self.base * 100)
+        return account_drawdown_pct(self.mt5, self.base, compounding=self.compounding)
 
     def submit(self, order):
         dd = self.drawdown_pct()
@@ -315,12 +312,13 @@ def brake_risk(base_risk_pct, drawdown_pct, tiers):
     return risk
 
 
-def account_drawdown_pct(mt5, base):
-    """How far the account is below its stored peak, as % of the sizing base."""
+def account_drawdown_pct(mt5, base, compounding=False):
+    """How far the account is below its stored peak: % of the sizing base (fixed
+    equity_cap), or % of the peak itself when sizing compounds on real equity."""
     acct, peak = mt5.account_info(), DrawdownBreaker.peak()
     if acct is None or peak is None or not base:
         return 0.0
-    return max(0.0, (peak - acct.equity) / float(base) * 100)
+    return max(0.0, (peak - acct.equity) / float(peak if compounding else base) * 100)
 
 
 def market_open(now_utc):
@@ -626,7 +624,7 @@ class StrategyRunner:
             broker = MarginGuard(broker, mt5, self.symbol, float(max_margin) / 100, self.label)
         max_dd = cfg["live"].get("max_drawdown_pct")
         if max_dd:
-            broker = DrawdownBreaker(broker, mt5, base, float(max_dd), self.label)
+            broker = DrawdownBreaker(broker, mt5, base, float(max_dd), self.label, compounding=not cap)
         mult = cfg["live"].get("max_spread_mult")
         if mult:
             broker = SpreadGuard(broker, float(mult) * float(cfg["costs"]["spread_pips"]), self.label)
@@ -709,7 +707,7 @@ class StrategyRunner:
         """Cut risk per trade while the account is in a drawdown (live.risk_brake)."""
         if not self._brake:
             return
-        dd = account_drawdown_pct(self._mt5, self._base)
+        dd = account_drawdown_pct(self._mt5, self._base, compounding=not self.cfg["live"].get("equity_cap"))
         risk = brake_risk(self._base_risk, dd, self._brake)
         self.risk.risk_pct = risk
         if risk != self._braked_at:

@@ -17,6 +17,15 @@ Exit:
   of `exit_days` days (long) / above highest high (short), or an opposite
   entry signal.
 No profit target; no time exit. Swap is charged by the broker.
+
+Add-on mode (add_on_r > 0, "adding to a winner"): runs as its own unit next to
+the main trend bot. On the same entry signal it does NOT buy; it arms. Once
+price has moved add_on_r x the main trade's initial risk in the trend's
+direction, it buys a second position whose stop is the MAIN trade's entry
+price (so if the trend fails there, it closes near breakeven). After that it
+trails and exits exactly like the main trade. It disarms if the trend exits
+(exit channel / opposite signal) or the main trade's initial stop would have
+been hit before the add-on triggered.
 """
 from collections import deque
 from datetime import timedelta
@@ -44,6 +53,8 @@ class TrendFollow:
         self.long_only  = cfg.get("long_only", False)
         self.short_only = cfg.get("short_only", False)
         self.score      = float(cfg.get("score", 100))
+        self.add_on_r   = float(cfg.get("add_on_r", 0.0))     # 0 = normal entries
+        self.armed      = None   # add-on: (side, trigger price, stop price, main initial stop)
         keep = max(self.entry_days, self.exit_days or 0, self.atr_days, 2) + 5
         self.days = deque(maxlen=keep)      # completed (high, low, close)
         self.ema_f = self.ema_s = None
@@ -136,6 +147,8 @@ class TrendFollow:
             else:
                 self.trail_ext = min(self.trail_ext or pos.entry_price, bar.low)
         if not new_day:
+            if pos is None and self.armed:
+                return self._add_on_check(bar, broker, risk)
             # Entry signal stays valid for the whole day, so a bot (re)started
             # after the day's first bar still takes it. Backtests: unchanged,
             # the first bar of the day already fires.
@@ -164,17 +177,38 @@ class TrendFollow:
                 broker.close_position("trend_exit")
             return None
 
+        if self.add_on_r > 0 and self.armed:
+            side, trig, stop0, init_stop = self.armed
+            last_close = self.days[-1][2]
+            if self._exit_channel_hit(side) or sig == -side or (last_close - init_stop) * side <= 0:
+                self.armed = None                       # the trend ended before the add-on fired
         if sig == 0 or atr is None:
-            return None
+            return self._add_on_check(bar, broker, risk) if self.armed else None
         if (sig == 1 and self.short_only) or (sig == -1 and self.long_only):
             return None
+        if self.add_on_r > 0:
+            if self.armed and self.armed[0] == sig:      # same trend: keep the original trigger
+                return self._add_on_check(bar, broker, risk)
+            base = bar.close
+            r = self.stop_atr * atr
+            self.armed = (sig, base + sig * self.add_on_r * r, base, base - sig * r)
+            return self._add_on_check(bar, broker, risk)
         self.pending, self.pending_atr = sig, atr
         return self._entry(sig, atr, bar, broker, risk)
 
-    def _entry(self, sig, atr, bar, broker, risk) -> Optional[TradeProposal]:
+    def _add_on_check(self, bar, broker, risk) -> Optional[TradeProposal]:
+        side, trig, stop0, _ = self.armed
+        if (bar.close - trig) * side < 0:
+            return None
+        return self._entry(side, self.last_atr, bar, broker, risk, stop=stop0, tag="trend_add")
+
+    def _entry(self, sig, atr, bar, broker, risk, stop=None, tag=None) -> Optional[TradeProposal]:
         spread = bar.spread_pips * self.pip
         entry = bar.close + (spread if sig == 1 else 0.0)
-        stop = entry - sig * self.stop_atr * atr
+        if stop is None:
+            stop = entry - sig * self.stop_atr * atr
+        if (entry - stop) * sig <= 0:
+            return None
         eq = broker.equity()
         if not risk.can_trade(eq, bar.Index):
             return None
@@ -183,11 +217,12 @@ class TrendFollow:
             return None
         self.trail_ext = None
         return TradeProposal(Order(sig, units, stop, None,
-                                   "trend_long" if sig == 1 else "trend_short"),
+                                   tag or ("trend_long" if sig == 1 else "trend_short")),
                              self.score, NAME)
 
     def mark_fired(self):
         self.pending = 0
+        self.armed = None
 
     def describe(self, local_min=None):
         """Chart overlay: entry channel, exit channel, trailing stop, status."""
