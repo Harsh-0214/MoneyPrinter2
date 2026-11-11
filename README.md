@@ -8,9 +8,9 @@ positions at the same time, and the report tracks each one separately:
 
 | Market bot | Strategy | Bars | Trades/yr | Magic | When it trades |
 |---|---|---|---|---|---|
-| **EURUSD** | London Sweep + Breakout, daily trend filter | 5 min | ~27 | 12345 | 08:00–11:00 London, exits 16:00 |
+| **EURUSD** | London Sweep + Breakout, daily trend filter | 15 min | ~20 | 12345 | 08:00–11:00 London; Sweep exits 16:00, Breakout 20:00 |
 | | Daily swing pullback (RSI-2, 100-day trend) | 1 h | ~10 | 12445 | decides daily, holds 1–10 days |
-| **GBPUSD** | London Sweep + Breakout (SMT partner: EURUSD) | 5 min | ~38 | 12346 | 08:00–11:00 London, exits 16:00 |
+| **GBPUSD** | London Sweep + Breakout (SMT partner: EURUSD) | 5 min | ~38 | 12346 | 08:00–11:00 London; Sweep exits 16:00, Breakout 20:00 |
 | | Daily swing pullback (RSI-2, 200-day trend) | 1 h | ~11 | 12446 | decides daily, holds 1–10 days |
 | **XAUUSD** | Gold trend following, 55-day breakout, buy-only | 1 h | ~5 | 12347 | decides daily, holds weeks |
 | | Gold trend following, 20-day breakout, buy-only | 1 h | ~6 | 12447 | same |
@@ -212,7 +212,13 @@ setup. The highest-scoring proposal takes the one trade slot per pair per day
 - **Breakeven:** stop moves to entry at +1R
 - **Days:** skips Monday
 
-All positions close at **16:00 London** if still open.
+Sweep trades close at **16:00 London** and Breakout trades at **20:00 London** if still open.
+Nov 2026 test (2021-25, EUR+GBP): Breakout exit 20:00 +45% / PF 1.39 vs 16:00 +30% / PF 1.30;
+no time exit at all was worse (+20%, PF 1.14, DD -19%). `session_exit: null` disables it.
+
+**Timeframe (Nov 2026, with the 20:00 exit):** EURUSD runs on 15-min candles (2021-25 PF 1.48 vs
+1.30 on 5-min, DD -8.5% vs -13.5%; 2026 out-of-sample +4.1% vs +2.8%). GBPUSD stays on 5-min
+(+32% vs +22% on 15-min over 2021-25). 1-min and 30-min were worse on both pairs.
 
 ### 3. Gold daily trend following (XAUUSD only)
 - **Entry:** at the start of each London day, if yesterday's close was above the

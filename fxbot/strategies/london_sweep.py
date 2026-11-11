@@ -50,7 +50,9 @@ class LondonSweep:
         self.sweep_start  = _minutes(cfg.get("sweep_window_start",   "08:00"))
         self.sweep_end    = _minutes(cfg.get("sweep_window_end",     "10:30"))
         self.entry_cutoff = _minutes(cfg.get("entry_cutoff",         "11:00"))
-        self.session_exit = _minutes(cfg.get("session_exit",         "16:00"))
+        # session_exit: null = no time exit (trade ends only at its stop or target)
+        se = cfg.get("session_exit", "16:00")
+        self.session_exit = _minutes(se) if se else 10**9
 
         self.sweep_min    = cfg.get("sweep_min_pips",           1.0) * pip
         self.sweep_max    = cfg.get("sweep_max_pips",          15.0) * pip

@@ -94,7 +94,9 @@ strategies:
       range_start: "00:00"
       range_end: "08:00"
       entry_cutoff: "11:00"
-      session_exit: "16:00"
+      session_exit: "20:00"      # Nov 2026: 20:00 vs 16:00 on 2021-25 EUR+GBP: +45% vs +30%,
+                                 #   PF 1.39 vs 1.30, 1 losing year vs 2. No time exit was worse
+                                 #   (+20%, PF 1.14, DD -19%): the London move is over by evening.
       max_trades_per_day: 1
       min_range_pips: 22         # Nov 2026 sweep (trend filter on, real spreads): 20-25 all
                                  #   +13-15%; 22 = most profit, 65 trades/yr, 1 losing year
@@ -166,11 +168,13 @@ pairs:
     data:
       path: data/EURUSD_M1_histdata.csv
       source_tz: "UTC"
-      timeframe: 5min
+      timeframe: 15min           # Nov 2026: London stack on 15min vs 5min - 2021-25 PF 1.48 vs 1.30,
+                                 #   DD -8.5% vs -13.5%; 2026 out-of-sample +4.1% vs +2.8% (11 vs 13
+                                 #   trades). GBPUSD stays on 5min (more profit there over 2021-25).
     smt:
       path: data/GBPUSD_M1_histdata.csv
       source_tz: "UTC"
-      timeframe: 5min
+      timeframe: 15min           # SMT feed must match the pair's bars
     sleeves:                     # extra strategies: own position + magic (12445), own bot
       - name: pullback           # daily swing pullback: buy dips in uptrends, sell rallies in downtrends
         data: {timeframe: 1h}

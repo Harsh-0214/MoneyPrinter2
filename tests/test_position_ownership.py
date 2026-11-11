@@ -66,7 +66,17 @@ def test_trailing_stop_only_tightens():
 
 def test_breakout_manages_own_position():
     b = _Broker("long_break")
-    s = LondonBreakout(_specs()["london_breakout"], PIP)
-    s.propose(_bar(1.1100), np.datetime64("2024-01-03"), 16 * 60 + 5, b, None)
+    spec = _specs()["london_breakout"]
+    s = LondonBreakout(spec, PIP)
+    h, m = map(int, spec["session_exit"].split(":"))
+    s.propose(_bar(1.1100), np.datetime64("2024-01-03"), h * 60 + m + 5, b, None)   # just past exit
     assert b.stop_moves == [1.1000]
     assert b.closes == ["session_exit"]
+
+
+def test_breakout_without_time_exit_keeps_position():
+    b = _Broker("long_break")
+    spec = dict(_specs()["london_breakout"], session_exit=None)
+    s = LondonBreakout(spec, PIP)
+    s.propose(_bar(1.1100), np.datetime64("2024-01-03"), 23 * 60 + 55, b, None)
+    assert b.closes == []

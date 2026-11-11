@@ -15,3 +15,6 @@ data/news/live_calendar*
 *.pyo
 .DS_Store
 mt5/compile.log
+
+# bot state rewritten while running
+data/state/

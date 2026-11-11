@@ -51,7 +51,8 @@ class LondonBreakout:
         self.range_start  = _minutes(cfg["range_start"])
         self.range_end    = _minutes(cfg["range_end"])
         self.entry_cutoff = _minutes(cfg["entry_cutoff"])
-        self.session_exit = _minutes(cfg["session_exit"])
+        # session_exit: null = no time exit (trade ends only at its stop or target)
+        self.session_exit = _minutes(cfg["session_exit"]) if cfg.get("session_exit") else 10**9
         # In multi-strategy mode, only propose after the sweep window closes
         self.defer_until  = _minutes(cfg.get("defer_until", "10:30"))
         self.buffer       = cfg["buffer_pips"] * pip
