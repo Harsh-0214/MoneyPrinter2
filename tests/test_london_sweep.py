@@ -297,7 +297,7 @@ def test_synthetic_no_edge():
     from fxbot.backtest import run_backtest, compute_metrics
     import yaml
 
-    cfg = yaml.safe_load(open("C:/Users/harsh/MoneyPrinter2/config.yaml"))
+    cfg = yaml.safe_load(open("config.yaml"))          # repo root (pytest runs from there)
     cfg["strategy"]["name"] = "london_sweep"
 
     raw = generate_synthetic(days=365, seed=99)
