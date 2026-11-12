@@ -33,6 +33,10 @@ TAG_PREFIXES = {
     "daily_pullback":  ("dpb_",),
     "vol_breakout":    ("vbo_",),
     "nr_breakout":     ("nrb_",),
+    "turtle_soup":     ("ts_",),
+    "eighty_twenty":   ("e20_",),
+    "holy_grail":      ("hg_",),
+    "id_nr4":          ("idnr_",),
 }
 _ALL = tuple(p for ps in TAG_PREFIXES.values() for p in ps)
 

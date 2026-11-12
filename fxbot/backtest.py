@@ -12,12 +12,17 @@ from .risk import RiskManager
 from .strategies import (LondonBreakout, LondonCloseReversal, LondonSweep,
                           MeanReversion, NYOpenBreakout, PrevDayBreakout,
                           TinyRangeFade, TrendFollow, KeyLevels, OpeningRange,
-                          TrendPullback, DailyPullback, VolBreakout, NarrowRangeBreak)
+                          TrendPullback, DailyPullback, VolBreakout, NarrowRangeBreak,
+                          TurtleSoup, EightyTwenty, HolyGrail, IDNR4)
 
 STRATEGY_MAP = {
     "daily_pullback":   DailyPullback,
     "vol_breakout":     VolBreakout,
     "nr_breakout":      NarrowRangeBreak,
+    "turtle_soup":      TurtleSoup,
+    "eighty_twenty":    EightyTwenty,
+    "holy_grail":       HolyGrail,
+    "id_nr4":           IDNR4,
     "opening_range":    OpeningRange,
     "trend_pullback":   TrendPullback,
     "key_levels":       KeyLevels,
