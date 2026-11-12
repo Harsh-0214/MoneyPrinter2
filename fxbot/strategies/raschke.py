@@ -57,6 +57,10 @@ class _DailySetup:
     def _new_setups(self):
         return []
 
+    def _exit_signal(self, side):
+        """Strategy-specific exit checked at each new day (completed days only)."""
+        return False
+
     def _intraday_ready(self, side, trigger, state, bar):
         """Extra intraday condition before a close-beyond-trigger entry (80-20 needs a probe)."""
         return True
@@ -86,7 +90,9 @@ class _DailySetup:
         if pos is not None:
             if manages(pos, self.NAME):
                 move_stop_to_breakeven(pos, broker, bar.close, self.be)
-                if self.max_hold == 0:
+                if new_day and self._exit_signal(pos.side):
+                    broker.close_position("signal_exit")
+                elif self.max_hold == 0:
                     if local_min >= self.exit_min:
                         broker.close_position("session_exit")
                 elif new_day and self.held_days >= self.max_hold:
@@ -239,3 +245,103 @@ class IDNR4(_DailySetup):
         if not (inside and nr4):
             return []
         return [(1, y[1], y[2]), (-1, y[2], y[1])]
+
+
+NOW = float("inf")       # trigger meaning "enter at the first bar of the day"
+
+
+class TDSequential(_DailySetup):
+    """Tom DeMark, TD Sequential setup: 9 consecutive daily closes below (above) the
+    close 4 days earlier = a buy (sell) setup, i.e. an exhausted move. Enter at the next
+    day's first bar against the move; stop beyond the setup's extreme. Optional
+    'perfection' (bar 8 or 9 low below bars 6 and 7 lows)."""
+    NAME, TAG = "td_setup", "td_"
+
+    def _new_setups(self):
+        d = self.d.days; n = int(self.cfg.get("count", 9))
+        if len(d) < n + 5:
+            return []
+        c = [x[3] for x in d]
+
+        def run(sign):           # consecutive closes beyond the close 4 bars earlier, ending yesterday
+            k = 0
+            for i in range(len(c) - 1, 3, -1):
+                if (c[i] - c[i - 4]) * sign > 0:
+                    k += 1
+                else:
+                    break
+            return k
+        out, setup = [], d[-n:]
+        if run(-1) == n:
+            perfect = min(setup[-1][2], setup[-2][2]) <= min(setup[-3][2], setup[-4][2])
+            if perfect or not self.cfg.get("perfection", False):
+                out.append((1, -NOW, min(x[2] for x in setup)))
+        if run(1) == n:
+            perfect = max(setup[-1][1], setup[-2][1]) >= max(setup[-3][1], setup[-4][1])
+            if perfect or not self.cfg.get("perfection", False):
+                out.append((-1, NOW, max(x[1] for x in setup)))
+        return out
+
+
+class BollingerSqueeze(_DailySetup):
+    """John Bollinger's squeeze: daily BandWidth ((upper-lower)/middle, 20 days, 2 std)
+    at its lowest of `lookback` days within the last `recent` days, then the first
+    daily close outside a band. Enter next day; stop = middle band; exit when a day
+    closes back through the middle band (no fixed target by default)."""
+    NAME, TAG = "bb_squeeze", "bbs_"
+
+    def _bands(self, end=None):
+        n, k = int(self.cfg.get("period", 20)), float(self.cfg.get("std", 2.0))
+        c = [x[3] for x in self.d.days[:end]]
+        if len(c) < n:
+            return None
+        w = c[-n:]; m = sum(w) / n; sd = (sum((x - m) ** 2 for x in w) / n) ** 0.5
+        return m - k * sd, m, m + k * sd
+
+    def _new_setups(self):
+        look, recent = int(self.cfg.get("lookback", 120)), int(self.cfg.get("recent", 5))
+        d = self.d.days
+        if len(d) < look + 25:
+            return []
+        bws = []
+        for e in range(len(d) - look + 1, len(d) + 1):
+            b = self._bands(e if e < len(d) else None)
+            bws.append((b[2] - b[0]) / b[1])
+        if min(bws[-recent:]) > min(bws):
+            return []
+        lo, mid, hi = self._bands(); c = d[-1][3]
+        if c > hi:
+            return [(1, -NOW, mid)]
+        if c < lo:
+            return [(-1, NOW, mid)]
+        return []
+
+    def _exit_signal(self, side):
+        b = self._bands()
+        return b is not None and (self.d.days[-1][3] - b[1]) * side < 0
+
+
+class DoubleSeven(_DailySetup):
+    """Larry Connors' Double 7s: above the 200-day average, buy a daily close at a
+    7-day low; sell when a day closes at a 7-day high (mirror for shorts below the
+    average). Connors uses no stop; a wide `stop_atr` x ATR catastrophe stop is used
+    here because the bot sizes every trade by its stop."""
+    NAME, TAG = "double_seven", "d7_"
+
+    def _new_setups(self):
+        n, slow = int(self.cfg.get("days", 7)), int(self.cfg.get("trend_days", 200))
+        d = self.d.days
+        if len(d) < slow + 1:
+            return []
+        sma, atr = self.d.sma(slow), self.d.atr(20)
+        c = [x[3] for x in d[-n:]]; last = c[-1]
+        out = []
+        if last > sma and last <= min(c):
+            out.append((1, -NOW, last - float(self.cfg.get("stop_atr", 3.0)) * atr))
+        if last < sma and last >= max(c):
+            out.append((-1, NOW, last + float(self.cfg.get("stop_atr", 3.0)) * atr))
+        return out
+
+    def _exit_signal(self, side):
+        n = int(self.cfg.get("days", 7)); c = [x[3] for x in self.d.days[-n:]]
+        return (side == 1 and c[-1] >= max(c)) or (side == -1 and c[-1] <= min(c))

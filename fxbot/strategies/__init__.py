@@ -11,4 +11,5 @@ from .key_levels import KeyLevels
 from .opening_range import OpeningRange
 from .trend_pullback import TrendPullback
 from .daily_patterns import DailyPullback, NarrowRangeBreak, VolBreakout
-from .raschke import EightyTwenty, HolyGrail, IDNR4, TurtleSoup
+from .raschke import (BollingerSqueeze, DoubleSeven, EightyTwenty, HolyGrail, IDNR4,
+                      TDSequential, TurtleSoup)

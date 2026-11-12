@@ -13,7 +13,8 @@ from .strategies import (LondonBreakout, LondonCloseReversal, LondonSweep,
                           MeanReversion, NYOpenBreakout, PrevDayBreakout,
                           TinyRangeFade, TrendFollow, KeyLevels, OpeningRange,
                           TrendPullback, DailyPullback, VolBreakout, NarrowRangeBreak,
-                          TurtleSoup, EightyTwenty, HolyGrail, IDNR4)
+                          TurtleSoup, EightyTwenty, HolyGrail, IDNR4,
+                          TDSequential, BollingerSqueeze, DoubleSeven)
 
 STRATEGY_MAP = {
     "daily_pullback":   DailyPullback,
@@ -23,6 +24,9 @@ STRATEGY_MAP = {
     "eighty_twenty":    EightyTwenty,
     "holy_grail":       HolyGrail,
     "id_nr4":           IDNR4,
+    "td_setup":         TDSequential,
+    "bb_squeeze":       BollingerSqueeze,
+    "double_seven":     DoubleSeven,
     "opening_range":    OpeningRange,
     "trend_pullback":   TrendPullback,
     "key_levels":       KeyLevels,

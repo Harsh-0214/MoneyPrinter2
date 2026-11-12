@@ -68,3 +68,13 @@ def test_id_nr4_brackets_inside_narrow_day():
     s = IDNR4(dict(entry_start="07:00", entry_end="16:00"), 0.01)
     orders = _feed(s, days, extra=[(100.1, 100.6, 100.0, 100.5)])
     assert len(orders) == 1 and orders[0].side == 1 and orders[0].stop_loss == 99.7
+
+
+def test_td_sequential_fires_after_nine_lower_closes():
+    from fxbot.strategies.raschke import TDSequential
+    days = _flat(30) + [(100 - i, 100.5 - i, 99.0 - i, 99.5 - i) for i in range(1, 14)]   # long decline
+    s = TDSequential(dict(count=9, trail_to_breakeven_rr=0.0, target_rr=None, entry_start="07:00",
+                          entry_end="16:00"), 0.01)
+    assert any(o.side == 1 for o in _feed(s, days[:-4], extra=[(96.0, 96.2, 95.8, 96.1)]))   # exactly 9th
+    s = TDSequential(dict(count=9, entry_start="07:00", entry_end="16:00"), 0.01)
+    assert _feed(s, days[:-6], extra=[(96.0, 96.2, 95.8, 96.1)]) == []                      # only 7 so far
