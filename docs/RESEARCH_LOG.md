@@ -73,6 +73,22 @@ Portfolio sim (margin + brake): 2021-25 avg ~4.9%/month, max DD ~-21%; 2026 ~7.5
 - Live bug fixed: MT5 sometimes returns no tick for a moment; `current_spread_pips`,
   `submit` and `close_position` now handle it instead of raising (3 crashes on 11 Nov).
 
+## Calendar / flow effects (12 Nov 2026, `run_calendar_effects.py`) - none passed
+
+| Idea | Result |
+|---|---|
+| Turn-of-month on 6 indices (last day to 3rd day), 2001-2026 | No better than any other 4-day hold, on every index |
+| Overnight index drift (US close -> 09:00 NY), 2018-26 | Negative after costs on all 6 indices and gold |
+| Pre-FOMC drift (24 h before the decision), 2019-26 | NAS100 +33 bp/event but from 2020 + 2022; 2025-26 ~0; best 5 removed: +13 bp. Decayed |
+| Gold "Asian session" rise | Positive every year, but it's the 22-23 UTC reopen bars: BID recovers as the reopen spread narrows, a buyer pays the wide ASK. From 00 UTC: +0.3 bp/h < spread. Artifact |
+| Month-end USD rebalancing into the London 4pm fix (US vs foreign equities), 2010-26 | Coin flip on EUR/GBP/JPY/AUD (51-54% hit, sign flips by period) |
+
+## Live risk (12 Nov 2026)
+
+Gold (all 4 units) and USDJPY: 4% risk per trade; EURUSD, GBPUSD, GBP pullback: 3%.
+`run_portfolio.py` (real margin, brake as in run_live): avg month 3.92 / 6.34 / 7.03% for
+2021-23 / 2024-25 / 2026, max DD -17.2 / -19.7 / -8.6%.
+
 ## Why strategies fail here (diagnosis of every strategy tried, 2021-23)
 
 - 57% have no edge even before costs (coin flips): no filter or exit can fix them.
@@ -80,5 +96,5 @@ Portfolio sim (margin + brake): 2021-25 avg ~4.9%/month, max DD ~-21%; 2026 ~7.5
   (mostly opening-range breakouts trading 100-200 times a year).
 - 11% work - the live bots are drawn from this group.
 - Ways left to add profit: lower trading costs (raw-spread account), time (compounding),
-  and genuinely new strategy ideas. More markets for the proven strategies was tried on
-  12 Nov 2026 (JPY crosses, indices, silver, oil): none passed.
+  and genuinely new strategy ideas. Tried and failed on 12 Nov 2026: more markets for the
+  proven strategies (JPY crosses, indices, silver, oil) and calendar / flow effects.
