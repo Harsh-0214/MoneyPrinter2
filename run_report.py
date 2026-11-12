@@ -60,9 +60,12 @@ def live_trades(mt5, cfg, since):
     magics = {u["magic"]: u["key"] for u in units}            # e.g. 12445 -> "EURUSD:pullback"
     pips = {u["key"]: u.get("instrument", {}).get("pip", 0.0001) for u in units}
     deals = mt5.history_deals_get(since, datetime.now(timezone.utc) + timedelta(days=1)) or []
+    # a bot position = one the bot OPENED (its magic on the entry deal). Its closing deal
+    # can carry magic 0 when it's closed by hand in MT5, so group closes by position id.
+    mine = {d.position_id for d in deals if d.magic in magics and d.entry == mt5.DEAL_ENTRY_IN}
     by_pos = {}
     for d in deals:
-        if d.magic in magics:
+        if d.position_id in mine:
             by_pos.setdefault(d.position_id, []).append(d)
     rows = []
     for pid, ds in by_pos.items():
