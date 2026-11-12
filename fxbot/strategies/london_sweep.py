@@ -396,7 +396,12 @@ class LondonSweep:
     # ------------------------------------------------------------------ #
 
     def describe(self, local_min=None):
-        out = {"lines": [], "boxes": [], "status": ""}
+        out = {"lines": [], "boxes": [], "status": "", "vlines": [
+            {"min": self.range_end, "label": "Asian range ends", "color": "steelblue"},
+            {"min": self.sweep_end, "label": "Sweep window ends", "color": "dimgray"},
+            {"min": self.entry_cutoff, "label": "No new London trades after this", "color": "dimgray"}]}
+        if self.session_exit < 10**9:
+            out["vlines"].append({"min": self.session_exit, "label": "Sweep trades closed", "color": "orangered"})
         if self.asian_hi == float("-inf"):
             out["status"] = "Sweep: waiting for Asian range data"
             return out

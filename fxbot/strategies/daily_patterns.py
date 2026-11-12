@@ -234,6 +234,50 @@ class VolBreakout:
     def mark_fired(self):
         self.traded = True
 
+    def describe(self, local_min=None):
+        """Chart overlay: today's buy/sell trigger levels, the day's open, the trend line,
+        the entry window and the evening exit."""
+        def hm(m):
+            return f"{m // 60:02d}:{m % 60:02d}"
+        out = {"lines": [], "boxes": [], "status": "", "vlines": [
+            {"min": self.start, "label": "Breakout window opens", "color": "seagreen"},
+            {"min": self.end, "label": "Breakout window closes", "color": "dimgray"},
+            {"min": self.exit_min, "label": "Breakout trades closed", "color": "orangered"}]}
+        if not self.levels:
+            skip = self.d.key is not None and self.d.key.weekday() in self._skip
+            out["status"] = ("Vol breakout: skip day (Mondays are skipped) - watching only" if skip
+                             else f"Vol breakout: waiting for history ({len(self.d.days)} days)")
+            return out
+        up, dn, rng, trend, yclose = self.levels
+        day_open = up - self.k * rng
+        longs_ok = trend is None or yclose >= trend
+        shorts_ok = trend is None or yclose <= trend
+        stop = self.stop_k * rng
+        out["lines"] += [
+            {"price": up, "color": "seagreen" if longs_ok else "dimgray", "style": "dash",
+             "label": ("BUY if a candle closes above" if longs_ok else "buy level (blocked: trend is down)")},
+            {"price": dn, "color": "orangered" if shorts_ok else "dimgray", "style": "dash",
+             "label": ("SELL if a candle closes below" if shorts_ok else "sell level (blocked: trend is up)")},
+            {"price": day_open, "color": "white", "style": "dot",
+             "label": f"day open (+/- {self.k:g} x yesterday's range {rng / self.pip:.0f}p)"},
+        ]
+        if trend is not None:
+            out["lines"].append({"price": trend, "color": "silver", "style": "dot",
+                                 "label": f"{self.trend_n}-day average (trend)"})
+        side = "buys only" if longs_ok and not shorts_ok else ("sells only" if shorts_ok and not longs_ok else "both ways")
+        if self.traded:
+            msg = "traded today - done"
+        elif local_min is not None and local_min < self.start:
+            msg = f"window opens {hm(self.start)} London"
+        elif local_min is not None and local_min >= self.end:
+            msg = f"window closed ({hm(self.start)}-{hm(self.end)})"
+        else:
+            msg = f"watching until {hm(self.end)} London"
+        out["status"] = (f"Vol breakout: trend {'UP' if longs_ok and not shorts_ok else 'DOWN' if shorts_ok and not longs_ok else 'FLAT'}"
+                         f" -> {side}; {msg}; stop {stop / self.pip:.0f}p, stop to breakeven at +{self.be:g}R, "
+                         f"closes {hm(self.exit_min)}")
+        return out
+
     def on_bar(self, *a):
         p = self.propose(*a)
         if p and a[3].submit(p.order):

@@ -293,7 +293,11 @@ class LondonBreakout:
 
     def describe(self, local_min=None):
         """Chart overlay: breakout trigger lines + what it's waiting for."""
-        out = {"lines": [], "boxes": [], "status": ""}
+        out = {"lines": [], "boxes": [], "status": "", "vlines": [
+            {"min": self.defer_until, "label": "Breakout decides (still outside the range?)", "color": "seagreen"},
+            {"min": self.entry_cutoff, "label": "No new London trades after this", "color": "dimgray"}]}
+        if self.session_exit < 10**9:
+            out["vlines"].append({"min": self.session_exit, "label": "Breakout trades closed", "color": "orangered"})
         if self.hi == float("-inf"):
             out["status"] = "Breakout: waiting for Asian range data"
             return out

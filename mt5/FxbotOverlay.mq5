@@ -1,15 +1,16 @@
 //+------------------------------------------------------------------+
 //| FxbotOverlay.mq5                                                  |
 //| Draws what the MoneyPrinter2 Python bots currently "see":         |
-//| Asian range box, sweep / BOS / breakout lines, trend channels and |
-//| a status panel. Every bot trading this chart's symbol writes      |
+//| Asian range box, sweep / BOS / breakout lines, trend channels,    |
+//| time lines (windows, exits, news), open-trade entry/stop/target   |
+//| and a status panel. Every bot trading this chart's symbol writes      |
 //|   <Common>\Files\fxbot_<SYMBOL>.txt         (main strategy)       |
 //|   <Common>\Files\fxbot_<SYMBOL>_<sleeve>.txt (extra strategies)   |
 //| after each candle; this indicator re-reads them every 2 seconds.  |
 //| Display only - it never places or changes orders.                 |
 //+------------------------------------------------------------------+
 #property copyright "MoneyPrinter2"
-#property version   "1.20"
+#property version   "1.30"
 #property indicator_chart_window
 #property indicator_plots 0
 
@@ -121,6 +122,46 @@ string DrawFile(string fname, int &n)
          ObjectCreate(0, tl, OBJ_TEXT, 0, now, pr);
          ObjectSetString(0, tl, OBJPROP_TEXT, "  " + f[4]);
          ObjectSetInteger(0, tl, OBJPROP_COLOR, ParseColor(f[2]));
+         ObjectSetInteger(0, tl, OBJPROP_FONTSIZE, FontSize);
+         ObjectSetInteger(0, tl, OBJPROP_ANCHOR, ANCHOR_LEFT_LOWER);
+         ObjectSetInteger(0, tl, OBJPROP_SELECTABLE, false);
+      }
+      else if(f[0] == "VLINE" && k >= 5)          // a moment in time: window opens/closes, exits, news
+      {
+         string nm = PFX + "v" + IntegerToString(n++);
+         datetime t = (datetime)StringToInteger(f[1]);
+         ObjectCreate(0, nm, OBJ_VLINE, 0, t, 0);
+         ObjectSetInteger(0, nm, OBJPROP_COLOR, ParseColor(f[2]));
+         ObjectSetInteger(0, nm, OBJPROP_STYLE, ParseStyle(f[3]));
+         ObjectSetInteger(0, nm, OBJPROP_BACK, true);
+         ObjectSetInteger(0, nm, OBJPROP_SELECTABLE, false);
+         ObjectSetString(0, nm, OBJPROP_TOOLTIP, f[4]);
+         string tl = nm + "t";
+         double top = ChartGetDouble(0, CHART_PRICE_MAX);
+         ObjectCreate(0, tl, OBJ_TEXT, 0, t, top);
+         ObjectSetString(0, tl, OBJPROP_TEXT, " " + f[4]);
+         ObjectSetInteger(0, tl, OBJPROP_COLOR, ParseColor(f[2]));
+         ObjectSetInteger(0, tl, OBJPROP_FONTSIZE, FontSize - 1);
+         ObjectSetDouble(0, tl, OBJPROP_ANGLE, -90.0);
+         ObjectSetInteger(0, tl, OBJPROP_ANCHOR, ANCHOR_LEFT_UPPER);
+         ObjectSetInteger(0, tl, OBJPROP_SELECTABLE, false);
+      }
+      else if(f[0] == "TLINE" && k >= 6)          // a level that starts at a time (open trade levels)
+      {
+         string nm = PFX + "l" + IntegerToString(n++);
+         datetime t1 = (datetime)StringToInteger(f[1]);
+         double pr = StringToDouble(f[2]);
+         ObjectCreate(0, nm, OBJ_TREND, 0, t1, pr, now, pr);
+         ObjectSetInteger(0, nm, OBJPROP_RAY_RIGHT, true);
+         ObjectSetInteger(0, nm, OBJPROP_COLOR, ParseColor(f[3]));
+         ObjectSetInteger(0, nm, OBJPROP_STYLE, ParseStyle(f[4]));
+         ObjectSetInteger(0, nm, OBJPROP_WIDTH, f[4] == "solid" ? 2 : 1);
+         ObjectSetInteger(0, nm, OBJPROP_SELECTABLE, false);
+         ObjectSetString(0, nm, OBJPROP_TOOLTIP, f[5] + " " + DoubleToString(pr, _Digits));
+         string tl = nm + "t";
+         ObjectCreate(0, tl, OBJ_TEXT, 0, now, pr);
+         ObjectSetString(0, tl, OBJPROP_TEXT, "  " + f[5] + " " + DoubleToString(pr, _Digits));
+         ObjectSetInteger(0, tl, OBJPROP_COLOR, ParseColor(f[3]));
          ObjectSetInteger(0, tl, OBJPROP_FONTSIZE, FontSize);
          ObjectSetInteger(0, tl, OBJPROP_ANCHOR, ANCHOR_LEFT_LOWER);
          ObjectSetInteger(0, tl, OBJPROP_SELECTABLE, false);

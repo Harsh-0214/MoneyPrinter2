@@ -869,6 +869,9 @@ def run(cfg, pair="EURUSD", dry_run=False, allow_live=False, sleeve=None):
                         lines.append(f"STATUS|{nl}")
                     for r in runners:
                         lines += r.overlay_lines()
+                    from fxbot.overlay import news_rows
+                    rk = runners[0].risk
+                    lines += news_rows(rk.news_events, blackout_min=rk.blackout_ns // 60_000_000_000)
                     write_overlay(overlay_path, lines)
                 except Exception as e:          # drawing must never stop trading
                     log.warning("overlay write failed: %s", e)
