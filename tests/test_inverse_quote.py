@@ -30,3 +30,10 @@ def test_usd_quote_pairs_unchanged():
     b = SimBroker(50000)
     b._pos = Position(1, 100000, 1.1000, pd.Timestamp("2024-01-03", tz="UTC"), 1.0950, None, 0.0050)
     assert abs(b._pnl_at(1.1100) - 1000.0) < 1e-6
+
+
+def test_min_stop_spreads_skips_tight_stops():
+    r = RiskManager(dict(RISK, min_stop_spreads=12), 0.0001)
+    assert r.position_size(50000, 1.1000, 1.0990, spread_pips=1.0) == 0      # 10 pips < 12 spreads
+    assert r.position_size(50000, 1.1000, 1.0980, spread_pips=1.0) > 0       # 20 pips: fine
+    assert RiskManager(RISK, 0.0001).position_size(50000, 1.1000, 1.0990, 1.0) > 0   # off by default

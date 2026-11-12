@@ -32,6 +32,10 @@ risk:
   max_daily_loss_pct: 6.0     # kill switch: no new trades today after this loss (2 full losses at 3%)
   max_leverage: 14            # hard cap on position notional / equity (70% of FOREX.com's 20:1 on FX)
   min_units: 1000             # size is rounded down to micro lots (1,000 units)
+  min_stop_spreads: 0         # 0 = off. N = skip a trade whose stop is closer than N x the spread
+                              #   (idea from day-trader-skill). Nov 2026: stops < 12 spreads averaged
+                              #   ~0R (20 trades 2021-25, 4 in 2026), but with the rule at 12 the full
+                              #   portfolio was unchanged (+167.8% vs +171.9%, same PF/DD): left off.
   news_file: null             # optional CSV of high-impact news times (UTC), column "time"
                               #   (legacy; applies to every market, honoured even with news_filter off)
   # --- high-impact news filter (fxbot/news.py). Blocks NEW entries only; open trades stay.

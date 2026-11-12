@@ -23,6 +23,10 @@ class RiskManager:
         self.max_daily_loss_pct = float(cfg["max_daily_loss_pct"])
         self.max_leverage = float(cfg["max_leverage"])
         self.min_units = int(cfg["min_units"])
+        # Skip trades whose stop is closer than this many spreads (0 = off): such stops
+        # get knocked out by noise and pay the spread as a big share of the risk.
+        self.min_stop_spreads = float(cfg.get("min_stop_spreads", 0) or 0)
+        self.skipped_tight_stops = 0
         self.pip = pip
         self.day_start_equity = None
         # Account-currency value of 1.0 price unit per 1 unit traded. 1.0 when the
@@ -110,6 +114,9 @@ class RiskManager:
 
     def position_size(self, equity, entry_price, stop_price, spread_pips=0.0):
         """Units such that hitting the stop loses risk_per_trade_pct of equity."""
+        if self.min_stop_spreads > 0 and spread_pips > 0 and                 abs(entry_price - stop_price) < self.min_stop_spreads * spread_pips * self.pip:
+            self.skipped_tight_stops += 1
+            return 0                                   # stop too tight for the spread
         dist = abs(entry_price - stop_price) + spread_pips * self.pip
         if dist <= 0:
             return 0
