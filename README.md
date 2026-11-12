@@ -360,6 +360,9 @@ run_backtest.py          single-pair backtest
 run_validate.py          multi-pair walk-forward + robustness
 run_consistency.py       year-by-year grid for a single strategy
 run_arsenal.py           every strategy x every market (research)
+run_portfolio.py         all live strategies on one account: compounding, risk brake, real margin, Monte Carlo
+run_new_markets.py       live strategies on indices / silver / oil / JPY crosses (broker H1 feed)
+fetch_mt5_h1.py          broker's own H1 history -> data/mt5/ (for run_new_markets.py)
 run_live.py              live/demo runner (one bot per market, runs all its strategies)
 run_report.py            demo results vs backtest expectations
 start_bots.bat / run_forever.bat / stop_bots.bat   24/7 launchers

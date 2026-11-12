@@ -183,3 +183,17 @@ def test_close_position_does_nothing_when_no_position():
     broker.close_position()
 
     mt5_mock.order_send.assert_not_called()
+
+
+def test_missing_tick_does_not_crash():
+    """MT5 can return no tick for a moment (seen live Nov 11 2026): the bot must not raise."""
+    broker = make_broker()
+    tick = MagicMock()
+    tick.ask, tick.bid = 1.10015, 1.10005
+    mt5_mock.symbol_info_tick.return_value = tick
+    assert broker.current_spread_pips() == pytest.approx(1.0, abs=0.01)
+    mt5_mock.symbol_info_tick.return_value = None
+    assert broker.current_spread_pips() == pytest.approx(1.0, abs=0.01)   # last known spread
+    mt5_mock.positions_get.return_value = []
+    assert broker.submit(Order(side=1, units=10000, stop_loss=1.0980)) is False
+    mt5_mock.order_send.assert_not_called()

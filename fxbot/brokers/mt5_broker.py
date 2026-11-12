@@ -114,6 +114,9 @@ class MT5Broker(Broker):
             return False
 
         tick = mt5.symbol_info_tick(self._symbol)
+        if tick is None:
+            self._logger.error("submit: no price from MT5 for %s, order not sent", self._symbol)
+            return False
         price = tick.ask if order.side == 1 else tick.bid
         order_type = mt5.ORDER_TYPE_BUY if order.side == 1 else mt5.ORDER_TYPE_SELL
 
@@ -175,6 +178,9 @@ class MT5Broker(Broker):
             return
         close_type = mt5.ORDER_TYPE_SELL if pos.side == 1 else mt5.ORDER_TYPE_BUY
         tick = mt5.symbol_info_tick(self._symbol)
+        if tick is None:
+            self._logger.error("close_position: no price from MT5 for %s, will retry", self._symbol)
+            return
         price = tick.bid if pos.side == 1 else tick.ask
         lots = self._to_lots(pos.units, info)
 
@@ -256,8 +262,13 @@ class MT5Broker(Broker):
         return p / info.trade_contract_size
 
     def current_spread_pips(self) -> float:
+        """Live spread; the last known one if MT5 has no tick right now (it can return None
+        for a moment around reconnects)."""
         tick = mt5.symbol_info_tick(self._symbol)
-        return (tick.ask - tick.bid) / self._pip
+        if tick is None or not tick.ask or not tick.bid:
+            return getattr(self, "_last_spread", 0.0)
+        self._last_spread = (tick.ask - tick.bid) / self._pip
+        return self._last_spread
 
     def _contract(self) -> float:
         info = mt5.symbol_info(self._symbol)
