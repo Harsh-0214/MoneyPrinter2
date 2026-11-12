@@ -843,7 +843,7 @@ def run(cfg, pair="EURUSD", dry_run=False, allow_live=False, sleeve=None):
             acct = mt5.account_info()
             log.info("Account currency %s: 1 %s move per unit = %.4f %s (sizing uses this)",
                      acct.currency, symbol[3:6], runners[0].risk.quote_to_account, acct.currency)
-            risk_money = float(cfg["risk"]["risk_per_trade_pct"]) / 100 * float(cap or acct.equity)
+            risk_money = float(runners[0].cfg["risk"]["risk_per_trade_pct"]) / 100 * float(cap or acct.equity)
             q2a = runners[0].risk.quote_to_account
             narrate.say("Ready. Account is in %s (1 %s = %s %s). Each trade risks about %s %s.",
                         acct.currency, symbol[3:6], f"{q2a:.2f}" if q2a >= 0.1 else f"{q2a:.4f}", acct.currency,
