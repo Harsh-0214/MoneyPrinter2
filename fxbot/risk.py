@@ -42,6 +42,14 @@ class RiskManager:
         self.blackout_ns = int(cfg.get("news_blackout_minutes", 30)) * 60 * 10**9
         self.news_currencies = resolve_news_currencies(cfg.get("news_currencies", "auto"), symbol)
         self.news_day_block = [s.lower() for s in (cfg.get("news_day_block") or [])]
+        # Open-trade protection before high-impact news (None = off): "close",
+        # "breakeven" (move the stop to entry if the trade is in profit) or
+        # "breakeven_or_close" (in profit -> breakeven, otherwise close). Applied
+        # `news_protect_minutes` before the event to trades whose tag does NOT start
+        # with one of news_protect_skip_tags (multi-day strategies ride news by design).
+        self.news_protect = cfg.get("news_protect")
+        self.news_protect_minutes = float(cfg.get("news_protect_minutes", 20))
+        self.news_protect_skip = tuple(cfg.get("news_protect_skip_tags", ["trend_", "dpb_"]))
         self.on_news_skip = None          # live: callback(event_dict, t_utc) when news blocks an entry
         self.last_news_block = None
         self._static_news = load_calendar(cfg["news_file"]) if cfg.get("news_file") else empty_calendar()
@@ -85,6 +93,17 @@ class RiskManager:
                 return self.news_events.iloc[k].to_dict()
         return None
 
+    def event_ahead(self, t_utc, minutes):
+        """The next calendar event within `minutes` AFTER t_utc (for protecting open trades)."""
+        if len(self.news) == 0:
+            return None
+        t = pd.Timestamp(t_utc)
+        v = (t.tz_localize("UTC") if t.tzinfo is None else t).value
+        i = np.searchsorted(self.news, v)
+        if i < len(self.news) and self.news[i] - v <= minutes * 60 * 10**9:
+            return self.news_events.iloc[i].to_dict()
+        return None
+
     def near_news(self, t_utc):
         return self.news_hit(t_utc) is not None
 
@@ -124,3 +143,22 @@ class RiskManager:
         units = equity * self.risk_pct / 100 / (dist * fx)
         units = min(units, equity * self.max_leverage / (entry_price * fx))   # leverage cap
         return int(units // self.min_units * self.min_units)
+
+
+def protect_before_news(risk, broker, bar_close_utc, last_price, spread_price=0.0):
+    """Shared by the backtest and the live bot. Returns the action taken (or None)."""
+    mode = getattr(risk, "news_protect", None)
+    pos = broker.position()
+    if not mode or pos is None or str(pos.tag or "").startswith(risk.news_protect_skip):
+        return None
+    ev = risk.event_ahead(bar_close_utc, risk.news_protect_minutes)
+    if ev is None:
+        return None
+    in_profit = (last_price - pos.entry_price) * pos.side > spread_price
+    if mode == "close" or (mode == "breakeven_or_close" and not in_profit):
+        broker.close_position("news_protect")
+        return "close"
+    if mode in ("breakeven", "breakeven_or_close") and in_profit and             (pos.entry_price - pos.stop_loss) * pos.side > 0:
+        broker.update_stop(pos.entry_price)
+        return "breakeven"
+    return None

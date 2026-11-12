@@ -8,7 +8,7 @@ import pandas as pd
 
 from .brokers import SimBroker, compute_spread_pips
 from .data import PIP, filter_dates, load_csv, resample
-from .risk import RiskManager
+from .risk import RiskManager, protect_before_news
 from .strategies import (LondonBreakout, LondonCloseReversal, LondonSweep,
                           MeanReversion, NYOpenBreakout, PrevDayBreakout,
                           TinyRangeFade, TrendFollow, KeyLevels, OpeningRange,
@@ -258,6 +258,7 @@ def run_backtest(df, cfg, strategy_cls=None):
     risk = RiskManager(r_cfg, pip, cfg.get("symbol"))
 
     equity = np.empty(len(df))
+    bar_len = (df.index[1:] - df.index[:-1]).min() if len(df) > 1 else pd.Timedelta(0)
     slot_limit = int(cfg.get("slot_max_trades", 1))   # trades the morning slot may open per day
     prev_day        = None
     morning_fired   = None   # day on which the morning slot was used
@@ -267,6 +268,8 @@ def run_backtest(df, cfg, strategy_cls=None):
         broker.on_bar(bar)
         if broker.inverse_quote:            # USD/JPY on a USD account: 1 JPY = 1/price USD
             risk.quote_to_account = 1.0 / bar.close
+        if risk.news_protect:
+            protect_before_news(risk, broker, bar.Index + bar_len, bar.close, bar.spread_pips * pip)
         day  = local_days[i]
         lmin = local_mins[i]
         if day != prev_day:

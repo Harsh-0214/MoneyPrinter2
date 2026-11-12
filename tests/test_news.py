@@ -251,3 +251,24 @@ def test_live_calendar_bots_share_one_download(tmp_path, caplog):
     for b in bots:
         b.refresh()
     assert len(calls) == 4
+
+
+def test_protect_open_trade_before_news():
+    from types import SimpleNamespace
+    from fxbot.brokers.base import Position
+    from fxbot.risk import protect_before_news
+    r = _rm("EURUSD"); r.set_news(news.normalize(pd.DataFrame({"time": [T("2026-11-10 13:30", tz="UTC")],
+                                                              "currency": ["USD"], "event": ["US CPI"]})))
+    class B:
+        def __init__(self, tag): self.pos, self.done = Position(1, 1000, 1.1000, T("2026-11-10 09:00", tz="UTC"), 1.0950, 1.11, 0.005, 0.0, tag), []
+        def position(self): return self.pos
+        def close_position(self, reason=""): self.done.append(("close", reason))
+        def update_stop(self, px, take_profit=None): self.done.append(("stop", px))
+    r.news_protect = None
+    b = B("long_break"); assert protect_before_news(r, b, T("2026-11-10 13:15", tz="UTC"), 1.1020) is None    # off
+    r.news_protect = "breakeven_or_close"
+    b = B("long_break"); assert protect_before_news(r, b, T("2026-11-10 12:00", tz="UTC"), 1.1020) is None    # too early
+    b = B("long_break"); assert protect_before_news(r, b, T("2026-11-10 13:15", tz="UTC"), 1.1020) == "breakeven"
+    assert b.done == [("stop", 1.1000)]
+    b = B("long_break"); assert protect_before_news(r, b, T("2026-11-10 13:15", tz="UTC"), 1.0980) == "close"
+    b = B("trend_long"); assert protect_before_news(r, b, T("2026-11-10 13:15", tz="UTC"), 1.0980) is None    # multi-day: skip

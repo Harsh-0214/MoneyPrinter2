@@ -50,6 +50,11 @@ risk:
   news_day_block: []          # event-name keywords whose whole London day is skipped, e.g. [payrolls, fomc]
   news_calendar: data/news/high_impact_2021_2025.csv   # backtests (build_news_calendar.py)
   news_refresh_hours: 4       # live: Forex Factory weekly feed, cached in data/news/
+  news_protect: null          # open intraday trades before high-impact news: null (ride it), "close",
+                              #   "breakeven" or "breakeven_or_close". Nov 2026, 2021-25 portfolio:
+                              #   ride it +171.9% (DD -8.1%); breakeven +162.1%; close 20 min before
+                              #   +158.1%; close 60 min +157.0%; BE-or-close +154.7%; no DD gain.
+                              #   Breakouts get their best follow-through from the releases.
 
 # ---------------------------------------------------------------
 #  Multi-strategy morning stack with scored proposal routing
