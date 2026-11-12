@@ -215,3 +215,39 @@ def test_live_status_line_and_skip_log(caplog):
         r.can_trade(50000, T("2024-05-02 09:05", tz="UTC"))     # same event: logged once
     msgs = [x.getMessage() for x in caplog.records if "NEWS: skipping entry" in x.getMessage()]
     assert len(msgs) == 1 and "EUR EZ CPI at 09:00 UTC" in msgs[0]
+
+
+def test_live_calendar_bots_share_one_download(tmp_path, caplog):
+    """Four bots whose caches expire together: only one downloads; a 429 makes all wait."""
+    clock = Clock(T("2026-11-10 06:00", tz="UTC").timestamp())
+    calls = []
+
+    def fetch(url):
+        calls.append(url)
+        return FF_SAMPLE
+    bots = [news.LiveCalendar(cache_dir=str(tmp_path), refresh_hours=4, fetch=fetch, now=clock) for _ in range(4)]
+    bots[0].refresh()
+    clock.t += 5 * 3600                                         # all caches stale at once
+    for b in bots:
+        assert len(b.refresh()) == 3
+    assert len(calls) == 2                                      # first fill + ONE refresh, not four
+
+    clock.t += 5 * 3600
+
+    def limited(url):
+        calls.append(url)
+        raise RuntimeError("429 Client Error: Too Many Requests")
+    for b in bots:
+        b._fetch = limited
+    with caplog.at_level(logging.WARNING, logger="fxbot"):
+        for b in bots:
+            assert len(b.refresh()) == 3                        # cache still served
+    assert len(calls) == 3                                      # one attempt only
+    clock.t += 20 * 60                                          # 20 min later: still backing off
+    for b in bots:
+        b.refresh()
+    assert len(calls) == 3
+    clock.t += 15 * 60                                          # 35 min: one bot may try again
+    for b in bots:
+        b.refresh()
+    assert len(calls) == 4

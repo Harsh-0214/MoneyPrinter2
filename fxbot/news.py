@@ -115,6 +115,10 @@ class LiveCalendar:
                  keep_days=14, fetch=None, now=None):
         self.cache_path = os.path.join(cache_dir, "live_calendar.csv")
         self.meta_path = os.path.join(cache_dir, "live_calendar.meta.json")
+        # Shared by every bot: the last download attempt and how long to wait before the
+        # next one. The bots refresh on the same schedule, so without this all of them
+        # hit the feed in the same second and get rate-limited (HTTP 429).
+        self.attempt_path = os.path.join(cache_dir, "live_calendar.attempt.json")
         self.url = url
         self.refresh_s = float(refresh_hours) * 3600
         self.keep_days = keep_days
@@ -123,6 +127,24 @@ class LiveCalendar:
         self.events = empty_calendar()
         self._last_try = 0.0
         self._loaded_mtime = None
+
+    def _recent_shared_attempt(self):
+        try:
+            with open(self.attempt_path) as f:
+                a = json.load(f)
+            return self._now() - float(a["at"]) < float(a.get("wait", 900))
+        except Exception:
+            return False
+
+    def _write_attempt(self, wait_s):
+        try:
+            os.makedirs(os.path.dirname(self.attempt_path) or ".", exist_ok=True)
+            tmp = self.attempt_path + f".{os.getpid()}.tmp"
+            with open(tmp, "w") as f:
+                json.dump({"at": self._now(), "wait": wait_s, "pid": os.getpid()}, f)
+            os.replace(tmp, self.attempt_path)
+        except Exception:
+            pass
 
     def _cache_age(self):
         try:
@@ -148,14 +170,25 @@ class LiveCalendar:
                 if len(self.events) == 0 or mt != self._loaded_mtime:
                     self._load_cache()       # another bot refreshed it, or first call
                 return self.events
-            # Don't hammer the feed after a failure: retry at most every 15 minutes.
+            # Don't hammer the feed: this bot retries at most every 15 minutes, and no bot
+            # tries while another one's attempt is recent (shared attempt file).
             if not force and self._now() - self._last_try < 900:
                 return self.events
+            if not force and os.path.exists(self.cache_path) and self._recent_shared_attempt():
+                mt = os.path.getmtime(self.cache_path)
+                if len(self.events) == 0 or mt != self._loaded_mtime:
+                    self._load_cache()       # another bot is (or was just) fetching
+                return self.events
             self._last_try = self._now()
+            self._write_attempt(900)
             try:
                 fresh = parse_ff_json(self._fetch(self.url))
             except Exception as e:
-                log.warning("NEWS: calendar fetch failed (%s) - using cached calendar", e)
+                limited = "429" in str(e)
+                if limited:
+                    self._write_attempt(1800)    # rate-limited: every bot waits 30 minutes
+                log.warning("NEWS: calendar fetch failed (%s) - using cached calendar%s", e,
+                            "; all bots wait 30 min before retrying" if limited else "")
                 if len(self.events) == 0:
                     self._load_cache()
                 return self.events
