@@ -144,9 +144,9 @@ def replay(trades, risk_pct, live, max_lev, weights=None, start_eq=50_000.0):
         if dd >= stop_dd:
             continue
         rp = risk_pct * w[i]
-        for lvl, r_ in brake:
+        for lvl, r_ in brake:                   # same absolute caps as run_live.brake_risk
             if dd >= lvl:
-                rp = min(rp, r_ * w[i])
+                rp = min(rp, r_)
         open_risk = sum(v[0] for v in open_.values()) / bal * 100
         if open_risk + rp > cap + 1e-9:
             continue
