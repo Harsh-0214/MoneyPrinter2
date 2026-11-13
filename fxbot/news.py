@@ -64,9 +64,25 @@ def save_calendar(df, path):
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     d = normalize(df)
     d = d.assign(time=d["time"].dt.strftime("%Y-%m-%dT%H:%M:%SZ"))
-    tmp = path + ".tmp"
+    tmp = f"{path}.{os.getpid()}.tmp"          # per-process: bots never share a temp file
     d[COLUMNS].to_csv(tmp, index=False)
-    os.replace(tmp, path)
+    _replace_retry(tmp, path)
+
+
+def _replace_retry(src, dst, tries=10):
+    """os.replace, retried: on Windows it fails while another bot is reading dst."""
+    for i in range(tries):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if i == tries - 1:
+                try:
+                    os.remove(src)
+                except OSError:
+                    pass
+                raise
+            time.sleep(0.1 * (i + 1))
 
 
 def filter_currencies(df, currencies):
@@ -142,8 +158,32 @@ class LiveCalendar:
             tmp = self.attempt_path + f".{os.getpid()}.tmp"
             with open(tmp, "w") as f:
                 json.dump({"at": self._now(), "wait": wait_s, "pid": os.getpid()}, f)
-            os.replace(tmp, self.attempt_path)
+            _replace_retry(tmp, self.attempt_path)
         except Exception:
+            pass
+
+    def _take_lock(self, stale_s=120):
+        """Only one bot downloads at a time: an exclusive lock file (atomic create).
+        A lock older than stale_s is left over from a crashed bot and is taken over."""
+        lock = self.cache_path + ".lock"
+        try:
+            if os.path.exists(lock) and time.time() - os.path.getmtime(lock) > stale_s:
+                os.remove(lock)
+        except OSError:
+            pass
+        try:
+            fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.write(fd, str(os.getpid()).encode())
+            os.close(fd)
+            return lock
+        except OSError:
+            return None
+
+    @staticmethod
+    def _release_lock(lock):
+        try:
+            os.remove(lock)
+        except OSError:
             pass
 
     def _cache_age(self):
@@ -180,6 +220,26 @@ class LiveCalendar:
                     self._load_cache()       # another bot is (or was just) fetching
                 return self.events
             self._last_try = self._now()
+            lock = self._take_lock()
+            if lock is None:                 # another bot is downloading right now
+                if len(self.events) == 0:
+                    self._load_cache()
+                return self.events
+            try:
+                return self._download(force)
+            finally:
+                self._release_lock(lock)
+        except Exception as e:                # absolutely never break the bot
+            log.warning("NEWS: calendar refresh error (%s) - keeping previous calendar", e)
+        return self.events
+
+    def _download(self, force):
+        """Called with the lock held. Re-checks, then fetches and merges into the cache."""
+        try:
+            if not force and (self._cache_age() < self.refresh_s or
+                              (os.path.exists(self.cache_path) and self._recent_shared_attempt())):
+                self._load_cache()            # another bot finished just before we got the lock
+                return self.events
             self._write_attempt(900)
             try:
                 fresh = parse_ff_json(self._fetch(self.url))
@@ -196,8 +256,10 @@ class LiveCalendar:
             cutoff = pd.Timestamp(self._now(), unit="s", tz="UTC") - pd.Timedelta(days=self.keep_days)
             merged = normalize(pd.concat([old[old["time"] >= cutoff], fresh], ignore_index=True))
             save_calendar(merged, self.cache_path)
-            with open(self.meta_path, "w") as f:
+            mtmp = f"{self.meta_path}.{os.getpid()}.tmp"
+            with open(mtmp, "w") as f:
                 json.dump({"fetched_at": self._now(), "url": self.url, "events": len(fresh)}, f)
+            _replace_retry(mtmp, self.meta_path)
             self.events = merged
             self._loaded_mtime = os.path.getmtime(self.cache_path)
             log.info("NEWS: calendar refreshed, %d high-impact events this week", len(fresh))

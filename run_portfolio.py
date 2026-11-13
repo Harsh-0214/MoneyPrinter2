@@ -112,8 +112,9 @@ def load_trades(cfg, source, refresh=False):
     return t
 
 
-def replay(trades, risk_pct, live, max_lev, weights=None, start_eq=50_000.0):
-    """One account, trades in time order. Returns (equity series at each event, taken mask)."""
+def replay(trades, risk_pct, live, max_lev, weights=None, start_eq=50_000.0, detail=False):
+    """One account, trades in time order. Returns (equity series at each event, taken mask),
+    plus each trade's P/L in money when detail=True."""
     brake = sorted(live.get("risk_brake") or [], key=lambda x: x[0])
     stop_dd = float(live.get("max_drawdown_pct") or 1e9)
     cap = float(live.get("max_open_risk_pct") or 1e9)
@@ -128,6 +129,7 @@ def replay(trades, risk_pct, live, max_lev, weights=None, start_eq=50_000.0):
     open_ = {}                                 # i -> (risk money, margin money)
     times, eqs = [], []
     taken = np.zeros(len(trades), bool)
+    money = np.zeros(len(trades))
     R = trades["r_multiple"].to_numpy()
     lev1 = trades["lev_per_1pct"].to_numpy()
     w = np.ones(len(trades)) if weights is None else trades["unit"].map(weights).fillna(1.0).to_numpy()
@@ -136,6 +138,7 @@ def replay(trades, risk_pct, live, max_lev, weights=None, start_eq=50_000.0):
             if i in open_:
                 risk_m, _ = open_.pop(i)
                 bal += R[i] * risk_m
+                money[i] = R[i] * risk_m
                 peak = max(peak, bal)
                 times.append(t)
                 eqs.append(bal)
@@ -163,7 +166,8 @@ def replay(trades, risk_pct, live, max_lev, weights=None, start_eq=50_000.0):
             lev = room / mrate[i]
         open_[i] = (rp / 100 * bal, lev * mrate[i] * bal)
         taken[i] = True
-    return pd.Series(eqs, index=pd.to_datetime(times, utc=True)), taken
+    eq = pd.Series(eqs, index=pd.to_datetime(times, utc=True))
+    return (eq, taken, money) if detail else (eq, taken)
 
 
 def stats(eq, start_eq=50_000.0):

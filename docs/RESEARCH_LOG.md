@@ -83,6 +83,18 @@ Portfolio sim (margin + brake): 2021-25 avg ~4.9%/month, max DD ~-21%; 2026 ~7.5
 | Gold "Asian session" rise | Positive every year, but it's the 22-23 UTC reopen bars: BID recovers as the reopen spread narrows, a buyer pays the wide ASK. From 00 UTC: +0.3 bp/h < spread. Artifact |
 | Month-end USD rebalancing into the London 4pm fix (US vs foreign equities), 2010-26 | Coin flip on EUR/GBP/JPY/AUD (51-54% hit, sign flips by period) |
 
+## 13 Nov 2026
+
+- **US index opening-range breakout** (`run_index_orb.py`, NAS100 / SPX500 / US30, 15 and 30 min
+  range after the 09:30 NY open, 2R or no target, with / without trend filter, 15-min bars
+  Apr 2024-Nov 2026 and 5-min bars Jun 2025-Nov 2026, real spreads): PF 0.70-1.08 in all 24
+  runs. ~12 trades a month at break-even or worse. Rejected.
+- **Breakout minimum Asian range 21 vs 22 pips** (full portfolio, real margin): avg month
+  2021-23 3.91 vs 3.92, 2024-25 6.11 vs 6.34, 2026 5.93 vs 7.04. 20-24 pips all similar
+  (plateau), 22 stays.
+- News calendar: one bot downloads at a time (lock file), per-process temp files, retried
+  replace on Windows. Fixes the "file in use" / HTTP 429 warnings when 4 bots refresh at once.
+
 ## Live risk (12 Nov 2026)
 
 Gold (all 4 units) and USDJPY: 4% risk per trade; EURUSD, GBPUSD, GBP pullback: 3%.

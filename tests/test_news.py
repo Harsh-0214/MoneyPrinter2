@@ -272,3 +272,26 @@ def test_protect_open_trade_before_news():
     assert b.done == [("stop", 1.1000)]
     b = B("long_break"); assert protect_before_news(r, b, T("2026-11-10 13:15", tz="UTC"), 1.0980) == "close"
     b = B("trend_long"); assert protect_before_news(r, b, T("2026-11-10 13:15", tz="UTC"), 1.0980) is None    # multi-day: skip
+
+
+def test_only_one_bot_downloads_while_locked(tmp_path):
+    """Bots wake in the same second: the one holding the lock downloads, the others wait."""
+    calls = []
+
+    def fetch(url):
+        calls.append(url)
+        return FF_SAMPLE
+
+    a = news.LiveCalendar(cache_dir=str(tmp_path), fetch=fetch)
+    b = news.LiveCalendar(cache_dir=str(tmp_path), fetch=fetch)
+    lock = a._take_lock()
+    assert lock is not None and b._take_lock() is None     # exclusive
+    b.refresh()
+    assert calls == []                                      # b didn't fetch while a held it
+    a._release_lock(lock)
+    a.refresh()
+    assert len(calls) == 1 and len(a.events)
+    b._last_try = 0
+    b.refresh()                                             # cache fresh -> b just loads it
+    assert len(calls) == 1 and len(b.events) == len(a.events)
+    assert not [f for f in os.listdir(tmp_path) if f.endswith(".tmp") or f.endswith(".lock")]
