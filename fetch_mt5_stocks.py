@@ -1,6 +1,6 @@
 """Download hourly history of the largest US stock CFDs from MT5 (read-only).
 
-    python fetch_mt5_stocks.py        # -> data/mt5/stocks/<name>_H1.csv
+    python fetch_mt5_stocks.py [--refresh]   # -> data/mt5/stocks/<name>_H1.csv (skips existing)
 
 Two lists: the biggest companies today, and the biggest at the start of 2013 (what someone
 choosing "top companies" would have picked when the data begins). Used by run_stocks.py.
@@ -19,6 +19,9 @@ TOP_NOW = ["Nvidia", "Apple", "Microsoft", "Alphabet Inc A", "Amazon", "Meta Pla
 TOP_2013 = ["Apple", "Exxon Mobil", "Alphabet Inc A", "Walmart", "Microsoft", "Berkshire Hathaway - Class B",
             "General Electric", "IBM", "Chevron Corp", "Johnson & Johnson", "Procter and Gamble", "AT&T",
             "Pfizer", "Wells Fargo and Co"]
+# second halves of the pairs in run_stock_edges.py
+PAIR_EXTRA = ["Mastercard", "Coca Cola Co", "PepsiCo", "J.P. Morgan", "Bank Of America", "Goldman Sachs",
+              "Morgan Stanley", "Costco", "Merck and Co"]
 
 
 def fname(n):
@@ -28,7 +31,9 @@ def fname(n):
 if __name__ == "__main__":
     os.makedirs("data/mt5/stocks", exist_ok=True)
     mt5.initialize()
-    for n in dict.fromkeys(TOP_NOW + TOP_2013):
+    for n in dict.fromkeys(TOP_NOW + TOP_2013 + PAIR_EXTRA):
+        if os.path.exists(fname(n)) and "--refresh" not in sys.argv:
+            continue
         mt5.symbol_select(n, True)
         r = mt5.copy_rates_from_pos(n, mt5.TIMEFRAME_H1, 0, 99000)
         if r is None or not len(r):

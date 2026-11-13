@@ -141,3 +141,22 @@ as CFDs +13.5%/yr vs holding all 14 +4.7%/yr (7%/yr financing eats most of it); 
 2020-2025 (first half: +10.3% vs +7.6% hold-all; second half +34% vs +17%) and top 4-7 holdings
 give 16-17%/yr. Modest, period-dependent, a long-term investing idea (real shares, e.g. a TFSA),
 not a fit for the CFD bot. Not added.
+
+## Nov 13 2026 - Stock-specific strategies (dip buying, weak close, gap drift, pairs): rejected
+
+`run_stock_edges.py`. Rules written before the run (see the script header). Decisions at 15:00 NY,
+fills at the 16:00 close; 0.08%/side per stock + CFD financing. Account % = 25% of the account per
+trade, at most 4 at once (no leverage), average per year 2013-2025.
+
+| strategy                    | today's top 12: PF, yrs up, acct %/yr, 2026 | 2013's top 14: PF, yrs up, acct %/yr, 2026 |
+|-----------------------------|----------------------------------------------|--------------------------------------------|
+| S1 dip (RSI-2 < 10 above 200d) | 1.28, 12/13, +3.4, +13.4  PASS            | 1.19, 9/13, +1.3, +4.2 (fails 70% years)   |
+| S2 weak close (IBS < 0.2)   | 1.31, 8/13, +9.9, -13.3                      | 1.12, 7/13, +6.6, -12.7                    |
+| S3 gap >4% follow, buy      | 1.52, 10/13, +4.5, -1.0                      | 1.20, 7/12, +0.4, +2.5                     |
+| S3 gap >4% follow, short    | 0.49, 2/12                                   | 0.95, 6/11                                 |
+| S4 pairs (7 pairs, z > 2)   | 0.59, 1/13, -6.1 (every pair loses after costs)                          |
+
+Holding the lists for comparison: today's top 12 +45%/yr as shares (hindsight), 2013's top 14
++15.6%/yr as shares, ~+8.6% as CFDs. The dip-buy edge is real but small (+0.15% per trade on the
+2013 list) and is worth ~1-3%/yr to the account - far less than just holding the stocks. Large-cap
+pairs keep drifting apart instead of snapping back. Nothing added.
