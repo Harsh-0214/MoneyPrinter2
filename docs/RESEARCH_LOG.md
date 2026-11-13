@@ -116,3 +116,28 @@ Gold (all 4 units) and USDJPY: 4% risk per trade; EURUSD, GBPUSD, GBP pullback: 
 - Ways left to add profit: lower trading costs (raw-spread account), time (compounding),
   and genuinely new strategy ideas. Tried and failed on 12 Nov 2026: more markets for the
   proven strategies (JPY crosses, indices, silver, oil) and calendar / flow effects.
+
+## Nov 13 2026 - Big US company stocks (CFDs on the same account): rejected for the bot
+
+`fetch_mt5_stocks.py`, `run_stocks.py`. Broker H1 history 2013-2026, split-adjusted (one data hole
+in GE Jan-Sep 2025). Two lists: today's 12 biggest companies, and 2013's 14 biggest (the honest
+list - today's leaders are leaders because they went up). Costs: recorded spread + 0.08%/side
+(1.8c/share commission, $10 min) + CFD financing 7%/yr buys, 1.5%/yr shorts. Live settings, untuned.
+
+| strategy (pooled R, 1% risk)  | today's top 12: PF, years up, 2026 | 2013's top 14: PF, years up, 2026 |
+|-------------------------------|------------------------------------|-----------------------------------|
+| Trend 55/20 buy-only (gold)   | 1.22, 10/13, -15.9R                | 0.89, 5/13, -3.4R                 |
+| Trend 20/10 buy-only          | 1.20, 8/13, -11.1R                 | 0.89, 4/13, -3.6R                 |
+| Trend 55/20 buy+short         | 0.93, 4/13                         | 0.75, 2/13                        |
+| Trend 20/10 buy+short         | 0.87, 3/13                         | 0.75, 2/13                        |
+| Breakout US session (USDJPY)  | 0.75, 0/13                         | 0.52, 0/13                        |
+
+Trend buy-only only "works" on today's winners (hindsight) and loses on the 2013 list. Shorting
+stocks loses on both lists. Intraday breakout loses heavily.
+
+Momentum rotation (monthly, hold the 3 best 12-1 month performers of the 2013 list):
+as CFDs +13.5%/yr vs holding all 14 +4.7%/yr (7%/yr financing eats most of it); as real shares
+(no financing) +21.6%/yr, DD -18%, vs S&P 500 +13.4%/yr (2014-2025). But the edge is almost all
+2020-2025 (first half: +10.3% vs +7.6% hold-all; second half +34% vs +17%) and top 4-7 holdings
+give 16-17%/yr. Modest, period-dependent, a long-term investing idea (real shares, e.g. a TFSA),
+not a fit for the CFD bot. Not added.
