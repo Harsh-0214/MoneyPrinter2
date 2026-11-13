@@ -47,6 +47,10 @@ def _units_trades(cfg, source):
             continue
         c = pair_config(base, u)
         c["smt"] = {}
+        # every unit at exactly 1% here (a pair may override risk, e.g. gold at 4%); the
+        # replay applies the real risk. lev_per_1pct below assumes 1%.
+        c["risk"]["risk_per_trade_pct"] = 1.0
+        c["risk"]["max_leverage"] = 1000
         t, eq = run_backtest(bars[u["key"]], c)
         if not len(t):
             continue
