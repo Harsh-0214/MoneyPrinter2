@@ -92,6 +92,12 @@ Portfolio sim (margin + brake): 2021-25 avg ~4.9%/month, max DD ~-21%; 2026 ~7.5
 - **Breakout minimum Asian range 21 vs 22 pips** (full portfolio, real margin): avg month
   2021-23 3.91 vs 3.92, 2024-25 6.11 vs 6.34, 2026 5.93 vs 7.04. 20-24 pips all similar
   (plateau), 22 stays.
+- **CFTC positioning (COT)** (`fetch_cot.py`, `run_cot.py`, weekly reports 2000-2026, EUR/GBP/
+  JPY/AUD/CAD/CHF/gold, daily MT5 prices, entries the Monday after release, rules fixed first):
+  fade speculator extremes 2007-20 -0.17R/trade (5/14 years up); follow commercials -0.21R
+  (3/14); follow 4-week spec flow -0.03R (3/14). Filter on the bot's own trades: trades with
+  the crowd already on their side averaged the same R in 2021-23 (0.23 vs 0.23), lower in
+  2024-26 (0.20 vs 0.62) but still profitable, so skipping them removes profit. Rejected.
 - News calendar: one bot downloads at a time (lock file), per-process temp files, retried
   replace on Windows. Fixes the "file in use" / HTTP 429 warnings when 4 bots refresh at once.
 
