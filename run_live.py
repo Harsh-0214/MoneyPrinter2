@@ -1066,6 +1066,9 @@ def main():
                   "aren't doubled. Close the other one first.", tag)
         raise SystemExit(2)
     cfg = yaml.safe_load(open(args.config))
+    from fxbot import notify
+    if notify.attach(args.pair, cfg.get("live")):
+        log.info("Telegram notifications on")
     if args.allow_live and not cfg["live"].get("allow_live", False):
         raise SystemExit("--allow-live also requires live.allow_live: true in config.yaml")
     run(cfg, pair=args.pair, dry_run=args.dry_run, allow_live=args.allow_live, sleeve=args.sleeve)

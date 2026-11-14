@@ -394,3 +394,7 @@ live:
                              #   fixed $50k cap, max DD -19% vs -21%. Set a number to size as if the
                              #   account were that big (no compounding).
   allow_live: false          # must be true AND --allow-live flag set to run on a real account
+  telegram:                  # phone notifications (fxbot/notify.py). Needs TELEGRAM_BOT_TOKEN and
+    enabled: true            #   TELEGRAM_CHAT_ID in .env (python setup_telegram.py); without them: off
+    skips: true              # also send the "did not trade" lines (about 1-3 a day per market)
+    daily_summary: true      # the start-of-day summary per market
