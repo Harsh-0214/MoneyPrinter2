@@ -127,3 +127,10 @@ def extend_target(position, broker, bar, trail, trigger, step_r, lock_r, momentu
     new_sl = lock if (lock - position.stop_loss) * side > 0 else position.stop_loss
     broker.update_stop(new_sl, take_profit=new_tp)
     return True
+
+
+def px(x, pip):
+    """A price with the instrument's usual decimals (FX 5, JPY 3, gold 2)."""
+    import math
+    d = max(0, int(round(-math.log10(pip))) + 1) if pip > 0 else 5
+    return f"{x:.{d}f}"

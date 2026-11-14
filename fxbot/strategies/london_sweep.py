@@ -247,6 +247,10 @@ class LondonSweep:
     #  Order construction (read-only on broker/risk)                      #
     # ------------------------------------------------------------------ #
 
+    def _px(self, v):
+        from .proposal import px
+        return px(v, self.pip)
+
     def _reject(self, bar, why):
         import pandas as pd
         t = pd.Timestamp(bar.Index).tz_convert("Europe/London").strftime("%H:%M")
@@ -259,14 +263,17 @@ class LondonSweep:
         stop      = self.ext_hi + self.stop_buf + spread_px
         stop_dist = stop - entry_est
         if stop_dist <= 0 or stop_dist > self.max_stop_px:
-            self._reject(bar, f"stop {stop_dist / self.pip:.1f}p > max {self.max_stop_px / self.pip:.0f}p")
+            self._reject(bar, f"stop {stop_dist / self.pip:.1f} pips is more than the {self.max_stop_px / self.pip:.0f}-pip "
+                              f"maximum (entry {self._px(entry_est)}, stop {self._px(stop)})")
             return None
 
         target = self.asian_lo if self.target_mode == "opposite_range" \
             else entry_est - self.rr * stop_dist
         rr_actual = (entry_est - target) / stop_dist if stop_dist > 0 else 0
         if rr_actual < self.min_rr:
-            self._reject(bar, f"reward/risk {rr_actual:.2f} < min {self.min_rr}")
+            self._reject(bar, f"reward/risk {rr_actual:.2f} is below the {self.min_rr} minimum (entry "
+                              f"{self._px(entry_est)}, stop {self._px(stop)} = {stop_dist / self.pip:.1f} pips, target "
+                              f"{self._px(target)} = {abs(target - entry_est) / self.pip:.1f} pips)")
             return None
 
         equity = broker.equity()
@@ -283,14 +290,17 @@ class LondonSweep:
         stop      = self.ext_lo - self.stop_buf
         stop_dist = entry_est - stop
         if stop_dist <= 0 or stop_dist > self.max_stop_px:
-            self._reject(bar, f"stop {stop_dist / self.pip:.1f}p > max {self.max_stop_px / self.pip:.0f}p")
+            self._reject(bar, f"stop {stop_dist / self.pip:.1f} pips is more than the {self.max_stop_px / self.pip:.0f}-pip "
+                              f"maximum (entry {self._px(entry_est)}, stop {self._px(stop)})")
             return None
 
         target = self.asian_hi if self.target_mode == "opposite_range" \
             else entry_est + self.rr * stop_dist
         rr_actual = (target - entry_est) / stop_dist if stop_dist > 0 else 0
         if rr_actual < self.min_rr:
-            self._reject(bar, f"reward/risk {rr_actual:.2f} < min {self.min_rr}")
+            self._reject(bar, f"reward/risk {rr_actual:.2f} is below the {self.min_rr} minimum (entry "
+                              f"{self._px(entry_est)}, stop {self._px(stop)} = {stop_dist / self.pip:.1f} pips, target "
+                              f"{self._px(target)} = {abs(target - entry_est) / self.pip:.1f} pips)")
             return None
 
         equity = broker.equity()

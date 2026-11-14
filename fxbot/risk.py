@@ -119,8 +119,10 @@ class RiskManager:
 
     def can_trade(self, equity, t_utc):
         if self.daily_loss_hit(equity):
-            self.skip_note = ("daily_loss", f"the account is down {self.max_daily_loss_pct:g}% or more today "
-                                            "(daily loss limit), so no new trades until tomorrow")
+            ch = (equity - self.day_start_equity) / self.day_start_equity * 100
+            self.skip_note = ("daily_loss", f"the account is down {ch:.1f}% today ({self.day_start_equity:,.2f} -> "
+                                            f"{equity:,.2f}), past the {self.max_daily_loss_pct:g}% daily loss limit, "
+                                            f"so no new trades until tomorrow")
             return False
         ev = self.news_hit(t_utc)
         if ev is not None:
@@ -137,7 +139,8 @@ class RiskManager:
         """Units such that hitting the stop loses risk_per_trade_pct of equity."""
         if self.min_stop_spreads > 0 and spread_pips > 0 and                 abs(entry_price - stop_price) < self.min_stop_spreads * spread_pips * self.pip:
             self.skipped_tight_stops += 1
-            self.skip_note = ("tight_stop", f"its stop would be closer than {self.min_stop_spreads:g}x the spread")
+            self.skip_note = ("tight_stop", f"its stop is {abs(entry_price - stop_price) / self.pip:.1f} pips away, "
+                                            f"closer than {self.min_stop_spreads:g} x the {spread_pips:.1f}-pip spread")
             return 0                                   # stop too tight for the spread
         dist = abs(entry_price - stop_price) + spread_pips * self.pip
         if dist <= 0:
@@ -147,7 +150,8 @@ class RiskManager:
         units = min(units, equity * self.max_leverage / (entry_price * fx))   # leverage cap
         out = int(units // self.min_units * self.min_units)
         if out <= 0:
-            self.skip_note = ("size", "the trade size rounds down to less than the smallest lot the broker allows")
+            self.skip_note = ("size", f"risking {self.risk_pct:g}% of {equity:,.2f} with a {dist / self.pip:.1f}-pip "
+                                      f"stop gives {units:,.0f} units, less than the minimum {self.min_units:,}")
         return out
 
 

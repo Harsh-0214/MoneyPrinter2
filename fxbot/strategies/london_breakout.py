@@ -247,12 +247,16 @@ class LondonBreakout:
 
         side = self._deferred_side
         where = "above" if side == 1 else "below"
+        from .proposal import px
+        P = lambda v: px(v, self.pip)
+        rng_txt = f"{P(self.lo)}-{P(self.hi)}"
         # Range must be within configured bounds
         width = (self.hi - self.lo) / self.pip
         if not (self.min_range <= width <= self.max_range):
             if side:
-                self.skip_note = ("range", f"price broke {where} the overnight range, but the range is "
-                                           f"{width:.0f} pips and the rule allows {self.min_range}-{self.max_range}")
+                self.skip_note = ("range", f"price broke {where} the overnight range {rng_txt} (now {P(bar.close)}), "
+                                           f"but the range is {width:.1f} pips and the rule allows "
+                                           f"{self.min_range}-{self.max_range} pips")
             return None
 
         # EMA trend filter (applies in deferred mode too)
@@ -268,8 +272,9 @@ class LondonBreakout:
             de = getattr(bar, "daily_ema", float("nan"))
             if de == de:
                 if (self._deferred_side == 1 and bar.close < de) or (self._deferred_side == -1 and bar.close > de):
-                    self.skip_note = ("trend", f"price broke {where} the overnight range, but the 50-day trend "
-                                               f"is {'DOWN' if side == 1 else 'UP'}, so it only "
+                    self.skip_note = ("trend", f"price broke {where} the overnight range {rng_txt}, but price "
+                                               f"{P(bar.close)} is {'below' if side == 1 else 'above'} the 50-day "
+                                               f"average {P(de)} (trend {'DOWN' if side == 1 else 'UP'}), so it only "
                                                f"{'sells' if side == 1 else 'buys'} today")
                     return None
 
@@ -278,7 +283,7 @@ class LondonBreakout:
         if self._deferred_side == 1 and bar.close > self.hi + self.buffer:
             if self.max_defer_ext is not None:
                 if bar.close - (self.hi + self.buffer) > self.max_defer_ext:
-                    self._note_extended(bar.close - (self.hi + self.buffer))
+                    self._note_extended(bar.close - (self.hi + self.buffer), bar.close, self.hi)
                     return None
             order = self._build_long_order(bar, broker, risk)
             if order:
@@ -287,20 +292,24 @@ class LondonBreakout:
         if self._deferred_side == -1 and bar.close < self.lo - self.buffer:
             if self.max_defer_ext is not None:
                 if (self.lo - self.buffer) - bar.close > self.max_defer_ext:
-                    self._note_extended((self.lo - self.buffer) - bar.close)
+                    self._note_extended((self.lo - self.buffer) - bar.close, bar.close, self.lo)
                     return None
             order = self._build_short_order(bar, broker, risk)
             if order:
                 return TradeProposal(order, self._compute_score(bar, -1), "london_breakout")
 
         if side:
-            self.skip_note = ("inside", f"price broke {where} the overnight range earlier but is back inside it "
-                                        "(false-breakout filter); it can still enter before 11:00 if it breaks out again")
+            edge = P(self.hi + self.buffer) if side == 1 else P(self.lo - self.buffer)
+            self.skip_note = ("inside", f"price broke {where} the overnight range {rng_txt} earlier but is back "
+                                        f"inside it at {P(bar.close)} (false-breakout filter); it can still enter "
+                                        f"before 11:00 if a candle closes {where} {edge}")
         return None
 
-    def _note_extended(self, beyond):
-        self.skip_note = ("ext", f"price is already {beyond / self.pip:.0f} pips past the overnight range, more "
-                                 f"than the {self.max_defer_ext / self.pip:.0f}-pip limit (the move already ran)")
+    def _note_extended(self, beyond, close, edge):
+        from .proposal import px
+        self.skip_note = ("ext", f"price {px(close, self.pip)} is already {beyond / self.pip:.1f} pips past the "
+                                 f"overnight range edge {px(edge, self.pip)}, more than the "
+                                 f"{self.max_defer_ext / self.pip:.0f}-pip limit (the move already ran)")
 
     def mark_fired(self):
         """Called by the multi-strategy engine after submitting this proposal."""

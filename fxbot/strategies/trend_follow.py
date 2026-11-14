@@ -206,8 +206,12 @@ class TrendFollow:
         if sig == 0 or atr is None:
             return self._add_on_check(bar, broker, risk) if self.armed else None
         if (sig == 1 and self.short_only) or (sig == -1 and self.long_only):
-            self.skip_note = ("side", f"the daily close broke the {self.entry_days}-day "
-                                      f"{'low' if sig == -1 else 'high'}, but this strategy only "
+            from .proposal import px
+            d = list(self.days)
+            win = d[-self.entry_days - 1:-1]
+            lvl = min(l for _, l, _ in win) if sig == -1 else max(h for h, _, _ in win)
+            self.skip_note = ("side", f"the daily close {px(d[-1][2], self.pip)} broke the {self.entry_days}-day "
+                                      f"{'low' if sig == -1 else 'high'} {px(lvl, self.pip)}, but this strategy only "
                                       f"{'buys' if self.long_only else 'sells'}")
             return None
         if self.add_on_r > 0:

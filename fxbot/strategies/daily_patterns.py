@@ -139,7 +139,9 @@ class DailyPullback:
             elif last < trend and rsi > self.hi and not self.long_only:
                 self.pending = -1
             elif last < trend and rsi > self.hi:
-                self.skip_note = ("side", "a sharp rally in a downtrend (sell signal), but this strategy only buys")
+                self.skip_note = ("side", f"a sell signal (2-day RSI {rsi:.0f} above {self.hi:g}, close {last:.5g} "
+                                          f"below the {self.trend_n}-day average {trend:.5g}), but this strategy "
+                                          f"only buys")
             self.pending_atr = atr
         if not self.pending:
             return None
@@ -238,8 +240,11 @@ class VolBreakout:
         side = 1 if bar.close > up else (-1 if bar.close < dn else 0)
         if not (self.start <= local_min < self.end):
             if side and not self.add_on_r and self.n_traded == 0 and local_min >= self.end:
-                self.skip_note = ("window", f"price closed {'above the buy' if side == 1 else 'below the sell'} "
-                                            f"level, but entries are only allowed {self.start // 60:02d}:"
+                from .proposal import px
+                self.skip_note = ("window", f"price {px(bar.close, self.pip)} closed "
+                                            f"{'above the buy' if side == 1 else 'below the sell'} level "
+                                            f"{px(up if side == 1 else dn, self.pip)} at {local_min // 60:02d}:"
+                                            f"{local_min % 60:02d}, but entries are only allowed {self.start // 60:02d}:"
                                             f"{self.start % 60:02d}-{self.end // 60:02d}:{self.end % 60:02d} London")
             return None
         if self.add_on_r > 0:
@@ -247,9 +252,14 @@ class VolBreakout:
         if side == 0:
             return None
         if trend is not None and ((side == 1 and yclose < trend) or (side == -1 and yclose > trend)):
-            self.skip_note = ("trend", f"price closed {'above the buy' if side == 1 else 'below the sell'} level, "
-                                       f"but the {self.trend_n}-day trend is {'DOWN' if side == 1 else 'UP'}, so "
-                                       f"only {'sells' if side == 1 else 'buys'} are allowed")
+            from .proposal import px
+            self.skip_note = ("trend", f"price {px(bar.close, self.pip)} closed "
+                                       f"{'above the buy' if side == 1 else 'below the sell'} level "
+                                       f"{px(up if side == 1 else dn, self.pip)}, but yesterday's close "
+                                       f"{px(yclose, self.pip)} is {'below' if side == 1 else 'above'} the "
+                                       f"{self.trend_n}-day average {px(trend, self.pip)} (trend "
+                                       f"{'DOWN' if side == 1 else 'UP'}), so only {'sells' if side == 1 else 'buys'} "
+                                       f"are allowed")
             return None
         stop = bar.close - side * self.stop_k * rng
         target = bar.close + side * self.target_rr * self.stop_k * rng if self.target_rr else None
@@ -272,7 +282,10 @@ class VolBreakout:
         ext = bar.low if s == 1 else bar.high
         if (ext - main_stop) * s <= 0:
             self.main_side = 0                  # the main trade was stopped: no add-on today
-            self.skip_note = ("addon", "the main breakout was stopped out before the add-on level, so no add-on today")
+            from .proposal import px
+            self.skip_note = ("addon", f"the main breakout was stopped at {px(main_stop, self.pip)} before the add-on "
+                                       f"level {px(level + s * self.add_on_r * self.stop_k * rng, self.pip)}, so no "
+                                       f"add-on today")
             self.n_traded = self.max_trades
             return None
         trigger = level + s * self.add_on_r * self.stop_k * rng

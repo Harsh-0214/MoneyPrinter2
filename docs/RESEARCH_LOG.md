@@ -317,3 +317,21 @@ Pullback on USD/JPY and AUD/USD (histdata, GBP settings): PF 0.83 and 1.14, both
   1.41): AUDUSD PF 1.28 but 0.07R a trade and 2 losing years of 5, USDCHF 1.14, NZDUSD 1.09,
   USDCAD 0.97, EURGBP 0.24. None.
 - Breakout on AUDUSD with the USDJPY rules (histdata 2021-25 + 2026): PF 0.52. No.
+
+## Nov 13 2026 (night) - Leeway on the London thresholds: rejected
+
+`run_leeway.py`. Every London threshold loosened by the same share at once (Sweep min
+reward/risk and max stop, Breakout min/max range and the 15-pip "already ran" cap). EUR + GBP,
+1% risk, histdata. Extra trades = trades the live rules would not take.
+
+| leeway | trades | extra trades | extra R | 2021-23 ret / PF | 2024-25 ret / PF |
+|--------|--------|--------------|---------|------------------|------------------|
+| 0 (live) | 291  | -            | -       | +27.5% / 1.43    | +14.2% / 1.40    |
+| 0.5%   | 298    | 8            | +0.3    | +25.5% / 1.38    | +15.6% / 1.44    |
+| 2%     | 312    | 25           | -3.5    | +24.4% / 1.35    | +13.0% / 1.34    |
+| 5%     | 334    | 52           | -1.5    | +26.9% / 1.35    | +13.2% / 1.32    |
+| 10%    | 368    | 91           | -2.4    | +34.7% / 1.42    | +5.7% / 1.11     |
+| 20%    | 421    | 153          | +2.2    | +41.2% / 1.41    | +3.1% / 1.05     |
+
+The near-misses are break-even trades as a group: more trades, no more profit, and 2024-25
+falls apart from 10% on. 0.5% is noise (one period up, one down). The live thresholds stay.
