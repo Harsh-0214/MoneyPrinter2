@@ -16,6 +16,10 @@ if errorlevel 1 (
     timeout /t 45 /nobreak >nul
 )
 
+rem Phone control (Telegram /status /startbots /stopbots /restart); exits at once if already
+rem running or if Telegram isn't set up. It keeps running when the bots are stopped.
+start "fxbot phone control" /min "%~dp0venv\Scripts\python.exe" "%~dp0telegram_control.py"
+
 for %%B in (EURUSD GBPUSD XAUUSD USDJPY) do (
     start "fxbot %%B" cmd /k ""%~dp0run_forever.bat" %%B"
     timeout /t 3 /nobreak >nul
