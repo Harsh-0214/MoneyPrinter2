@@ -24,7 +24,9 @@ costs:
                                      # raw/ECN accounts: often ~3.5 USD
 
 risk:
-  risk_per_trade_pct: 3.0     # % of equity lost if the stop is hit. Nov 2026: 3% targets ~5%/month
+  risk_per_trade_pct: 4.0     # % of equity lost if the stop is hit. Nov 14 2026: 3 -> 4% (EURUSD, GBPUSD,
+                              #   GBP pullback; gold and USDJPY already 4%), chosen by the user with
+                              #   USDJPY trend_sma: null. Was: 3% targets ~5%/month
                               #   (2021-25 sim with broker margin limits: avg 5.2%/mo, max DD -32%,
                               #   1-in-20 bad case -37%, 1-in-100 -46%; 2026: avg 4.9%/mo, DD -9%).
                               #   Was 1% (avg ~1.9%/mo, max DD -12%). Earlier note: (was 0.5; 1% backtest:
@@ -347,7 +349,8 @@ pairs:
                                      #   2026 +6.8% vs +4.2%. Results/entry_windows.csv.
           exit_time: "21:00"
           stop_range: 0.5
-          trend_sma: 50              # OPTION (Nov 13 2026): `trend_sma: null` trades against the trend
+          trend_sma: null            # Nov 14 2026: trend filter OFF (user's choice; was 50). Before:
+                                     # OPTION (Nov 13 2026): `trend_sma: null` trades against the trend
                                      #   too: 27 trades/yr (was 15), PF 1.69 (was 2.35), 2021-25 total
                                      #   +42R vs +36R, 2026 +25R vs +6R. Portfolio (at 4%): avg month
                                      #   3.92 -> 4.48 / 6.34 -> 5.94 / 7.04 -> 12.6, max DD 1-2.4 points

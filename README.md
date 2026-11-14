@@ -38,7 +38,7 @@ past prices. In everyday words:
   in profit, it adds a second, smaller-risk trade to the winner. Gold is buy-only: selling gold
   lost money in every test.
 - **USDJPY: the big-move breakout.** If the dollar/yen moves unusually far from where the day
-  started (in the direction of its longer trend), it often keeps going until evening. The bot
+  started, it often keeps going until evening (either direction since Nov 14 2026). The bot
   joins it and closes everything at 9 pm UK time. If that first attempt is stopped out and the
   price breaks out again the same day, it takes one second try.
 
@@ -53,9 +53,12 @@ Tests on past prices (2021–2026, including all trading costs) gave:
 
 | Period | Average month | Worst drop from a high point |
 |---|---|---|
-| 2021–2023 | +3.9% | −17% |
-| 2024–2025 | +6.3% | −20% |
-| 2026 (prices never used to design the rules) | +7.0% | −9% |
+| 2021–2023 | +4.9% | −18% |
+| 2024–2025 | +7.0% | −21% |
+| 2026 | +12.1% | −13% |
+
+(Nov 14 2026 settings: 4% risk on every strategy, USDJPY trading both directions. 2026 is no
+longer an untouched test: the USDJPY change was chosen partly because of how 2026 went.)
 
 What that means for a $50,000 account:
 
@@ -76,7 +79,7 @@ What that means for a $50,000 account:
 
 - **Every trade has an automatic exit for losses (a "stop loss")**, sent to the broker together
   with the trade. Even if the laptop dies, the broker closes the trade at that price.
-- **Each trade can lose at most 3% of the account** (4% for gold and USDJPY) if its stop is hit.
+- **Each trade can lose at most 4% of the account** if its stop is hit (3% on EURUSD/GBPUSD before Nov 14 2026).
 - **It slows down when things go badly.** When the account is 8% below its best point, trades
   get smaller (2%), then 1% at 15% down, then 0.5% at 20% down. Full size returns after it recovers.
 - **Emergency stop:** 28% below its best point, it stops opening new trades entirely.
@@ -180,7 +183,7 @@ Details of every test: `docs/RESEARCH_LOG.md` (and older ones in `docs/RESEARCH_
 | **R** | The amount a trade risks. "+2R" means it made twice what it risked; "−1R" means the stop was hit. |
 | **Pip** | A tiny price step in currencies (0.0001 for EURUSD). 20 pips is a typical small move. |
 | **Spread** | The small gap between the buy and sell price; it's the broker's fee on each trade. |
-| **Lot** | A trade's size. The bot calculates it for you from the 3% rule. |
+| **Lot** | A trade's size. The bot calculates it for you from the 4% rule. |
 | **Margin** | Money the broker sets aside while a trade is open (a deposit, not a cost). |
 | **Leverage** | Trading a position bigger than your cash, using margin. It makes gains and losses bigger. |
 | **CFD** | A contract that pays the price change without owning the real thing. |
@@ -205,14 +208,14 @@ Everything below is for working on the code.
 
 | Market bot | Strategy | Bars | Trades/yr | Risk | Magic | When it trades |
 |---|---|---|---|---|---|---|
-| **EURUSD** | London Sweep + Breakout, daily trend filter | 15 min | ~20 | 3% | 12345 | 08:00–11:00 London; Sweep exits 16:00, Breakout 20:00 |
-| **GBPUSD** | London Sweep + Breakout (SMT partner: EURUSD) | 5 min | ~38 | 3% | 12346 | same |
-| | Daily swing pullback (RSI-2, 200-day trend) | 1 h | ~13 | 3% | 12446 | decides daily, holds 1–10 days |
+| **EURUSD** | London Sweep + Breakout, daily trend filter | 15 min | ~20 | 4% | 12345 | 08:00–11:00 London; Sweep exits 16:00, Breakout 20:00 |
+| **GBPUSD** | London Sweep + Breakout (SMT partner: EURUSD) | 5 min | ~38 | 4% | 12346 | same |
+| | Daily swing pullback (RSI-2, 200-day trend) | 1 h | ~13 | 4% | 12446 | decides daily, holds 1–10 days |
 | **XAUUSD** | Gold trend following, 55-day breakout, buy-only | 1 h | ~5 | 4% | 12347 | decides daily, holds weeks |
 | | Gold trend following, 20-day breakout, buy-only | 1 h | ~6 | 4% | 12447 | same |
 | | Add-on to the 55-day trend once it is +0.5R | 1 h | ~4 | 4% | 12547 | same |
 | | Add-on to the 20-day trend once it is +0.5R | 1 h | ~4 | 4% | 12647 | same |
-| **USDJPY** | Volatility breakout (day open ± 0.9 × yesterday's range), 50-day trend, second try after a stop-out | 15 min | ~16 | 4% | 12348 | 05:00–12:00 London, exits 21:00 |
+| **USDJPY** | Volatility breakout (day open ± 0.9 × yesterday's range), both directions, second try after a stop-out | 15 min | ~30 | 4% | 12348 | 05:00–12:00 London, exits 21:00 |
 
 In `config.yaml`, a market's main stack is its `pairs:` entry and each extra strategy is a
 `sleeves:` item under it. A pair can override the global risk with its own `risk:` block.
@@ -293,7 +296,7 @@ month 3.9% → 4.9%, max drawdown unchanged.
 
 ### 7. USDJPY volatility breakout (USDJPY)
 - **Levels:** buy at today's open + 0.9 × yesterday's range, sell at the open − 0.9 × range.
-  Only in the direction of the 50-day trend; Mondays skipped.
+  Both directions since Nov 14 2026 (`trend_sma: null`; was: only with the 50-day trend); Mondays skipped.
 - **Window:** entries 05:00–12:00 London (every window ending at 12:00 beat later ones;
   12–16 London is the US-data whipsaw). Everything closes at 21:00.
 - **Stop:** 0.5 × yesterday's range; moves to entry at +1R. No fixed target (the best
@@ -303,15 +306,17 @@ month 3.9% → 4.9%, max drawdown unchanged.
   2021–25: PF 2.35 → 2.52, +7.5R from 6 extra trades, 4/5 years up (was 3/5); 2026 unchanged.
 - 2021–25: PF 2.52, max drawdown −5%; 2026 out-of-sample +6.8%. Its monthly returns are
   close to uncorrelated with the rest of the portfolio (−0.08).
-- Option, not applied: `trend_sma: null` (trade against the 50-day trend too) doubles the
-  trades, 2021–25 +42R vs +36R and 2026 +25R vs +6R, but halves the profit per trade and
-  deepens the portfolio drawdowns 1–2.4 points (docs/RESEARCH_LOG.md, Nov 13 evening).
+- **Trend filter off (Nov 14 2026, user's choice):** `trend_sma: null` trades against the 50-day
+  trend too: ~30 trades a year instead of ~16, 2021–25 +47R vs +44R and 2026 +23R vs +6R, but the
+  profit per trade is lower (0.31R vs 0.55R). Together with 4% risk on the London units: avg month
+  4.06 → 4.90% (2021-23), 6.54 → 7.03% (2024-25), 7.04 → 12.08% (2026); max DD −17.2 / −19.7 / −8.5
+  → −17.7 / −20.6 / −12.7%. Put `trend_sma: 50` back to undo.
 - The same rule lost on EURUSD, GBPUSD and gold (see docs/RESEARCH_HISTORY.md), so it trades USDJPY only.
 
 
 ### Position sizing and risk limits
-- **Per trade:** 3% of equity (`risk.risk_per_trade_pct`), 4% on gold and USDJPY (their
-  `risk:` override). `live.equity_cap: null` sizes on the real account equity, so profits
+- **Per trade:** 4% of equity on every strategy (`risk.risk_per_trade_pct`: 4 since Nov 14 2026;
+  gold and USDJPY also set it in their own `risk:` block). `live.equity_cap: null` sizes on the real account equity, so profits
   compound and losses shrink trades. Converted to the account currency (CAD) with MT5's own rate:
   `units = equity × risk% / (stop distance × USD→CAD)`. Gold units are ounces (1 lot = 1 oz).
 - **Risk brake** (`live.risk_brake`): while the account is below its peak, trades shrink:
