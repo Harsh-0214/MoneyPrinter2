@@ -511,3 +511,22 @@ fixed: Dukascopy candles are seconds + open/close/low/high).
 - Why: the win rate really is high (56-64%), but the 15-min target is usually close (average win
   ~0.47R) while the stop at the daily gap's far edge is far (average loss ~0.8R). With zero costs it
   is break-even (EURUSD +0.01R, gold +0.01R a trade): no edge before costs, a loss after them.
+
+## Nov 14 2026 - CRT (Candle Range Theory): rejected
+
+`fxbot/strategies/crt.py` (research only), `run_crt.py`. Range = previous daily (London day) or
+4-hour candle; sweep of one side read on the candle's close ("close") or intrabar; entry on a lower-
+timeframe market structure shift (close through the last swing point after the sweep) or a fair value
+gap; stop beyond the sweep extreme; target the opposite end of the range; min reward/risk 0 or 1.5;
+out at the end of the next higher-timeframe candle. Daily on 1 h, daily on 15 min, 4 h on 15 min.
+EURUSD, GBPUSD, gold, USDJPY (histdata 2021-25), NASDAQ 100 (Dukascopy 2021-26). Real costs, 1% risk.
+
+- 120 runs: 13 profitable over 2021-25, 2 pass (PF >= 1.15, 4/5 years): GBPUSD daily/1 h close/MSS/
+  RR 1.5 (PF 1.61, 8 trades a year) and EURUSD daily/1 h intrabar/MSS/RR 1.5 (PF 1.34). Median PF
+  0.73-0.82 per market; 4 h on 15 min worst (median PF 0.64).
+- Check on the broker's own hourly feed, 2010-2026 (2010-20 and 2026 never used): the same family
+  loses in 2010-20 on every market except gold "close" (2 trades a year): EURUSD intrabar -78R,
+  USDJPY intrabar -81R. The GBPUSD pass is PF 1.02 on the broker's 2021-25 feed (1.61 on histdata):
+  it depends on which data feed is used, so it isn't real. 2026: 5 of 8 negative.
+- The bot already trades the one CRT form that works: the London Sweep (Asian range swept, close
+  back inside, break of structure, target the other side).

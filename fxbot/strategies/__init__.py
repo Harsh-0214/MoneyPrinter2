@@ -15,3 +15,4 @@ from .raschke import (BollingerSqueeze, DoubleSeven, EightyTwenty, HolyGrail, ID
                       TDSequential, TurtleSoup)
 from .weekend_gap import WeekendGap
 from .fvg123 import FVG123
+from .crt import CRT
