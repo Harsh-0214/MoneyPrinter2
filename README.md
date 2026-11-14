@@ -129,7 +129,7 @@ A real-money account is blocked unless you deliberately turn it on twice
 
 ## What was tried and didn't work
 
-About 300 ideas were tested with the same strict rules (all costs included, rules fixed before
+About 320 ideas were tested with the same strict rules (all costs included, rules fixed before
 testing, checked on years not used to design them). Only the strategies above passed. Things that
 **did not** work:
 
@@ -138,6 +138,10 @@ testing, checked on years not used to design them). Only the strategies above pa
 - Calendar patterns: start/end of month, overnight moves, days before US interest-rate decisions.
 - Trading the first minutes after the US stock market opens.
 - Following or betting against what big traders hold (the weekly CFTC "COT" report).
+- **Carry trade** (buy high-interest currencies, short low-interest ones): earned nothing since
+  2007 even before the broker's cut, with a −34% crash in 2008.
+- **Trading big news** (jobs, inflation, central banks): following the first 15-minute move
+  and betting against it both lost. The market prices the news within minutes.
 - **Individual stocks** (Apple, Nvidia, Exxon...): trend, dip-buying, news-gap and "pairs"
   strategies. On big US companies, simply owning the stocks beat every trading strategy tested.
   Holding the strongest 3 each month did better than holding all of them, but that suits real
@@ -399,6 +403,9 @@ fetch_cot.py / run_cot.py      CFTC positioning data + 4 positioning tests (rese
 fetch_mt5_stocks.py      broker H1 history for big US stocks -> data/mt5/stocks/
 run_stocks.py            live strategies + momentum rotation on big US stocks (research, rejected)
 run_stock_edges.py       stock-specific strategies: RSI-2 dip, IBS, gap drift, pairs (research, rejected)
+run_carry.py             carry trade across 8 currencies, OECD rates (research, rejected)
+run_news_reaction.py     follow / fade the first 15 min after big news (research, rejected)
+fetch_mt5_extra.py       NZD daily + 2026 five-minute bars for the two tests above
 docs/RESEARCH_LOG.md     every test, its rules and result (older: docs/RESEARCH_HISTORY.md)
 run_live.py              live/demo runner (one bot per market, runs all its strategies)
 run_report.py            demo results vs backtest expectations

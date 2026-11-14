@@ -160,3 +160,35 @@ Holding the lists for comparison: today's top 12 +45%/yr as shares (hindsight), 
 +15.6%/yr as shares, ~+8.6% as CFDs. The dip-buy edge is real but small (+0.15% per trade on the
 2013 list) and is worth ~1-3%/yr to the account - far less than just holding the stocks. Large-cap
 pairs keep drifting apart instead of snapping back. Nothing added.
+
+## Nov 13 2026 - Carry trade and news-reaction trading: both rejected
+
+**Carry** (`run_carry.py`; OECD 3-month interbank rates into `data/rates/oecd.csv` from
+sdmx.oecd.org, FRED timed out; broker daily prices). Monthly: buy the 3 highest-rate of USD EUR
+GBP JPY AUD NZD CAD CHF, short the 3 lowest. The broker's MT5 swap fields read 0 on the demo, so
+its interest cut is unknown: judged at 1.5%/yr per position, shown at 0 and 3%.
+
+| version (no leverage)       | cut 0%: per yr, Sharpe, worst drop | cut 1.5%   | cut 3%   |
+|-----------------------------|------------------------------------|------------|----------|
+| V1 plain carry              | -0.2%, 0.02, -34%                  | -2.6%/yr   | -5.0%/yr |
+| V2 + 3-month crash filter   | -0.1%, 0.00, -29%                  | -1.4%/yr   | -2.4%/yr |
+
+Mostly long NZD/AUD, short CHF/JPY/EUR. 2008 -25%, then flat to down most years since. Even with
+the broker taking nothing it earned nothing over 2007-2025. (Data holes in the broker's daily
+files - EUR 2021, NZD 2020, CAD 2015, JPY/AUD/CHF most of 2025 - are handled by leaving that
+currency out of the ranking that month.)
+
+**News reaction** (`run_news_reaction.py`). First event of the day per market, 2021-2025
+calendar + 2026 US releases (BLS archive dates, FOMC). 15-minute reaction >= 0.2 x daily range:
+follow it (stop at the pre-release price) or fade it (stop at the 15-minute extreme); breakeven at
+1R, out after 4 h; double spread + slippage. Timing checked: EURUSD moves 14.1 pips in the 15
+minutes after NFP vs 6.0 the week before and 4.1 later that day.
+
+| threshold | follow: PF, yrs up, 2026 | fade: PF, yrs up, 2026 |
+|-----------|--------------------------|------------------------|
+| 0.1       | 0.50, 1/5, -21R          | 0.18, 0/5, -156R       |
+| 0.2       | 0.57, 1/5, -2.6R         | 0.25, 0/5, -100R       |
+| 0.3       | 0.77, 1/5, +0.2R         | 0.27, 1/5, -77R        |
+
+Following the move loses on every market; fading it loses badly (the 15-minute extreme is a
+tight stop that wide post-news spreads keep hitting). The first 15 minutes already price the news.
