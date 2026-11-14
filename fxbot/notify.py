@@ -29,7 +29,7 @@ API = "https://api.telegram.org/bot{token}/sendMessage"
 ALWAYS = re.compile(
     r"wants to (BUY|SELL)|Order sent|Trade size|moved the stop|is closing its trade|trade closed|"
     r"skipped a trade|Trade skipped|STOPPED NEW TRADES|below its best level|recovered to|"
-    r"Something went wrong|reconnecting|Bot started|Starting the|target further", re.I)
+    r"Something went wrong|reconnecting|Bot started|Starting the|target further|in a row", re.I)
 SKIP = re.compile(r"did not trade", re.I)
 SUMMARY = re.compile(r"Daily summary", re.I)
 

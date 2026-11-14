@@ -394,6 +394,12 @@ live:
                              #   fixed $50k cap, max DD -19% vs -21%. Set a number to size as if the
                              #   account were that big (no compounding).
   allow_live: false          # must be true AND --allow-live flag set to run on a real account
+  losing_streak:             # fxbot/streaks.py
+    alert_after: 3           # terminal + Telegram line when a strategy loses this many in a row
+    size_after: null         # null = off. 3 = trade that strategy at size_mult after 3 losses in a row,
+    size_mult: 0.5           #   until it wins one. Nov 14 2026 (run_streak_sizing.py): max DD -1.2 points
+                             #   in 2021-23 and 2026, avg month 4.06->4.02 / 6.54->6.56 / 7.04->6.76.
+                             #   Smoother but slightly less money; stopping after losses was worse.
   telegram:                  # phone notifications (fxbot/notify.py). Needs TELEGRAM_BOT_TOKEN and
     enabled: true            #   TELEGRAM_CHAT_ID in .env (python setup_telegram.py); without them: off
     skips: true              # also send the "did not trade" lines (about 1-3 a day per market)

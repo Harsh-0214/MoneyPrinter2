@@ -677,6 +677,7 @@ class StrategyRunner:
                 s.mark_fired()
         self.risk.quote_to_account = self.real_broker.quote_to_account()
         self.risk.on_news_skip = self._log_news_skip       # after replay: only live skips are logged
+        self._init_streak(mt5)
         self.log.info("ready: magic=%d timeframe=%s replayed=%d bars, last=%s, position=%s",
                       self.unit["magic"], cfg["data"]["timeframe"],
                       0 if bars is None else len(bars), self.last_ts,
@@ -711,13 +712,62 @@ class StrategyRunner:
             narrate.say("%s skipped a trade because big news is close: %s.", self.label, describe_event(ev))
 
     # ------------------------------------------------------------------ each poll
+    # ------------------------------------------------------------------ losing streaks
+    def _init_streak(self, mt5):
+        from fxbot import streaks
+        ls = self.cfg["live"].get("losing_streak") or {}
+        self._streak_alert = ls.get("alert_after", 3)
+        self._streak_size_after = ls.get("size_after")
+        self._streak_mult = float(ls.get("size_mult", 0.5))
+        try:
+            self._streak_hist = streaks.test_history(self.unit["key"])
+        except Exception:
+            self._streak_hist = None
+        try:
+            self.loss_streak = streaks.trailing_losses(
+                streaks.closed_pnls(mt5, self.unit["magic"], self.symbol))
+        except Exception as e:
+            self.log.warning("could not read past trades for the losing-streak count: %s", e)
+            self.loss_streak = 0
+        if self.loss_streak:
+            self.log.info("losing streak at startup: %d", self.loss_streak)
+
+    def _streak_mult_now(self):
+        n = getattr(self, "_streak_size_after", None)
+        return self._streak_mult if n and getattr(self, "loss_streak", 0) >= int(n) else 1.0
+
+    def _on_trade_closed(self):
+        """Update the losing streak from the trade that just closed; alert / resize."""
+        from fxbot import narrate, streaks
+        try:
+            trades = self.broker.trades
+            if not trades:
+                return
+            t = max(trades, key=lambda x: x.exit_time)
+        except Exception:
+            return
+        before = self.loss_streak
+        self.loss_streak = self.loss_streak + 1 if t.pnl <= 0 else 0
+        n_alert = self._streak_alert
+        if n_alert and self.loss_streak >= int(n_alert):
+            narrate.say("%s", streaks.alert_text(self.label, self.loss_streak, self._streak_hist)
+                        + (f" Trades are now {self._streak_mult:g}x size until it wins one."
+                           if self._streak_mult_now() < 1 and before < int(self._streak_size_after) else ""))
+        elif before >= int(n_alert or 10**9) and self.loss_streak == 0:
+            narrate.say("%s won after %d losses in a row: the losing streak is over%s.", self.label, before,
+                        "; back to normal size" if self._streak_size_after and before >= int(self._streak_size_after)
+                        else "")
+
     def _apply_risk_brake(self):
-        """Cut risk per trade while the account is in a drawdown (live.risk_brake)."""
+        """Cut risk per trade while the account is in a drawdown (live.risk_brake), and while
+        this strategy is on a losing streak if live.losing_streak.size_after is set."""
+        base = self._base_risk * self._streak_mult_now()
         if not self._brake:
+            self.risk.risk_pct = base
             return
         dd = account_drawdown_pct(self._mt5, self._base, compounding=not self.cfg["live"].get("equity_cap"))
-        risk = brake_risk(self._base_risk, dd, self._brake)
-        self.risk.risk_pct = risk
+        self.risk.risk_pct = brake_risk(base, dd, self._brake)     # streak size (if on) + account brake
+        risk = brake_risk(self._base_risk, dd, self._brake)        # account brake alone: what's narrated
         if risk != self._braked_at:
             from fxbot import narrate
             if risk < self._braked_at:
@@ -764,6 +814,7 @@ class StrategyRunner:
             self.last_bar = (new.index[-1], new.iloc[-1])     # newest closed candle (terminal MT5 line)
         if had_pos and broker.position() is None:
             _log_closed_trade(broker, self.log, who=self.label)
+            self._on_trade_closed()
         before = self.last_status
         self.last_status = _log_status_changes(self.morning, _london_local(datetime.now(timezone.utc))[1],
                                                self.last_status, self.log)

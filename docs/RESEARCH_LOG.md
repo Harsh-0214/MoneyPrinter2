@@ -373,3 +373,18 @@ Next trade after a streak: after a win +0.16 / +0.53R (2021-23 / 2024-26), after
 
 Every version throws away profitable trades and none is better in all three periods. The risk
 brake (smaller trades while the account is below its peak) already handles bad stretches.
+
+## Nov 14 2026 - Smaller trades during a strategy's own losing streak: an option, off
+
+`run_streak_sizing.py`, on top of the account brake, full portfolio replay.
+
+| rule | trades resized | avg month 21-23 / 24-25 / 2026 | max DD 21-23 / 24-25 / 2026 |
+|------|----------------|--------------------------------|-----------------------------|
+| live (account brake only) | - | 4.06 / 6.54 / 7.04 | -17.2 / -19.7 / -8.5 |
+| half size after 3 losses until a win | 66 | 4.02 / 6.56 / 6.76 | -16.0 / -19.6 / -7.3 |
+| quarter size after 3 losses | 66 | 4.18 / 6.73 / 6.59 | -16.0 / -19.2 / -7.8 |
+| half size after 2 losses | 124 | 3.83 / 6.38 / 6.75 | -15.8 / -18.5 / -7.3 |
+| half size while 5R below its own best | 50 | 3.98 / 6.60 / 7.04 | -17.2 / -19.3 / -8.5 |
+
+Drawdowns about 1 point shallower, returns about the same to 0.3 points a month lower in 2026.
+Built (`live.losing_streak.size_after`, fxbot/streaks.py), off. The streak alert is on.

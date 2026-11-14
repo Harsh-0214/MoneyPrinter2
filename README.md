@@ -98,6 +98,7 @@ What that means for a $50,000 account:
 | **See why it didn't trade** | Lines like `GBPUSD London did not trade: price broke above the overnight range, but the 50-day trend is DOWN, so it only sells today.` Every rule that blocks a trade (trend, range size, entry window, "move already ran", daily loss limit, total-risk limit, lot size, news, spread, margin) says so once a day. |
 | **Get it on your phone** | One-time setup: in Telegram open **@BotFather**, send `/newbot`, copy the token into `.env` as `TELEGRAM_BOT_TOKEN=...`, send your new bot any message, run `python setup_telegram.py`, restart the bots. Trades, skips, the brake, errors and daily summaries then arrive as Telegram messages. Switch off with `live.telegram.enabled: false` (or skips only with `skips: false`). |
 | **Check or start the bots from your phone** | In the same Telegram chat send `/status` (which bots are on, last activity, open trades, equity), `/startbots` (starts MetaTrader and any bot that is off), `/stopbots` (asks you to confirm) or `/restart`. `start_bots.bat` also starts this listener (`telegram_control.py`); it only answers your own chat. No reply within a minute means the laptop is off, asleep or restarting. |
+| **Know when a strategy is on a losing streak** | After 3 losses in a row the window and Telegram say so, with how often that happened in the tests. It keeps trading: stopping after losses lost money in every test. Optional: `live.losing_streak.size_after: 3` trades that strategy at half size until it wins (a bit smoother, a bit less profit). |
 | **See it on the charts** | In MetaTrader, the **FxbotOverlay** indicator draws the levels the bot is watching, trade entries, stop losses, targets and upcoming news. |
 | **See today's important events** | Open `logs/journal_<date>.log`. |
 | **Check how it's doing** | Run `python run_report.py`. It compares the real trades with what the tests expected. |
@@ -332,7 +333,7 @@ python -m venv venv
 venv\Scripts\activate
 pip install -r requirements.txt
 copy .env.example .env          # fill in MT5 login, password, server, terminal path
-python -m pytest -q             # 116 tests
+python -m pytest -q             # 120 tests
 python run_backtest.py --synthetic   # random data: should lose ~the spread
 ```
 
@@ -454,7 +455,7 @@ fxbot/
   strategies/  london_sweep.py  london_breakout.py  trend_follow.py (gold)  daily_patterns.py (pullback, USDJPY breakout)
                (+ opening_range, trend_pullback, key_levels, tiny_range_fade, weekend_gap,
                   london_close_reversal, ny_breakout, prev_day, mean_reversion: tested, unused)
-tests/                   116 unit tests
+tests/                   120 unit tests
 ```
 
 ## High-impact news filter (`fxbot/news.py`)
