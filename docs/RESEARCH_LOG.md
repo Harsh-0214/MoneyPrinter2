@@ -463,3 +463,9 @@ what binds at every level, mostly gold (22% margin). It can't safely go higher: 
 level is ~105%, under the broker's 120% margin call, so a small move against the open trades gets
 positions closed by the broker; the replay books P/L only at exit and doesn't model that. Nothing
 changed. A broker / account with lower gold margin would be the only safe way to loosen it.
+
+Non-gold risk only (`run_risk_nongold.py`, gold units fixed at 4%; EUR/GBP London, GBP pullback and
+USDJPY all set to the level). Typical / unlucky end from $3,000, 12% cap on: 3% 124k / 77k, 4% 143k /
+79k, 5% 147k / 74k, 6% 145k / 71k, 8% 135k / 61k (live mix, London 3% + USDJPY 4%: 132k / 79k). The
+actual 2021-26 order ended lower at 4% than live (53k vs 86k). Cap off adds 2-12k typical. 4% on the
+London units is a modest, uncertain gain: not applied, an option.
