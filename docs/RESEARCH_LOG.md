@@ -469,3 +469,24 @@ USDJPY all set to the level). Typical / unlucky end from $3,000, 12% cap on: 3% 
 79k, 5% 147k / 74k, 6% 145k / 71k, 8% 135k / 61k (live mix, London 3% + USDJPY 4%: 132k / 79k). The
 actual 2021-26 order ended lower at 4% than live (53k vs 86k). Cap off adds 2-12k typical. 4% on the
 London units is a modest, uncertain gain: not applied, an option.
+
+## Nov 14 2026 - Is the risk brake smart? Brake shapes compared
+
+`run_brake_variants.py` ($3,000, live risk mix, 28% stop kept, 1,000 reshuffles). Typical / unlucky
+(1 in 10) end, worst drop 1 in 100, share of reshuffles hitting the 28% stop:
+
+| brake | typical | unlucky | DD 1 in 100 | hit 28% stop |
+|-------|---------|---------|-------------|--------------|
+| none | 163k | 66k | -30.1% | 11.5% |
+| earlier 5 / 10 / 15% | 104k | 63k | -18.0% | 0% |
+| **live 8 / 15 / 20%** | **132k** | **79k** | **-22.1%** | **0%** |
+| 10 / 18 / 22% | 144k | 87k | -23.9% | 0% |
+| 12 / 20 / 24% | 152k | 91k | -25.3% | 0% |
+| 15 / 23 / 27% | 159k | 95k | -27.7% | 0.7% |
+| gentler cuts (2.5 / 1.5 / 1) | 154-163k | 91-94k | -26 to -29% | 0.3-3.4% |
+
+No brake has the best typical end but the worst unlucky one and 1 run in 9 hits the emergency stop.
+A later brake raises both typical and unlucky ends in the reshuffles, at 2-5 points deeper drops. But
+on the actual order it isn't better (12/20/24: avg month 3.98 / 6.51 / 7.09 vs live 4.06 / 6.54 / 7.04,
+max DD -20.8 / -22.1 vs -17.2 / -19.7). A later brake is an option (more expected profit, deeper dips);
+the live brake stays.
