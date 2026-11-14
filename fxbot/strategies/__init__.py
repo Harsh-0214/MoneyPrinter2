@@ -14,3 +14,4 @@ from .daily_patterns import DailyPullback, NarrowRangeBreak, VolBreakout
 from .raschke import (BollingerSqueeze, DoubleSeven, EightyTwenty, HolyGrail, IDNR4,
                       TDSequential, TurtleSoup)
 from .weekend_gap import WeekendGap
+from .fvg123 import FVG123

@@ -1,4 +1,4 @@
-﻿"""Download EUR/USD 1-minute BID candles directly from Dukascopy's data server.
+"""Download EUR/USD 1-minute BID candles directly from Dukascopy's data server.
 
 No account needed. Downloads the same data as their website, but automated.
 
@@ -40,11 +40,14 @@ def _parse_bi5(raw_bytes, day_date):
     """Decompress and parse one day's bi5 candle file.
 
     Each record is 24 bytes:
-      uint32 BE  time_ms  — milliseconds from midnight UTC of day_date
+      uint32 BE  time_s   — SECONDS from midnight UTC of day_date
       uint32 BE  open     — price * POINT
-      uint32 BE  high
+      uint32 BE  close    (Dukascopy's candle order is open, close, low, high)
       uint32 BE  low
-      uint32 BE  close
+      uint32 BE  high
+    Fixed Nov 14 2026: this used to read milliseconds and open/high/low/close, which put every
+    bar of a day inside its first minute and swapped high/close. (Backtests never used these files:
+    they run on histdata.)
       float32 BE volume   — tick volume (unused by our strategy)
     """
     try:
@@ -61,8 +64,8 @@ def _parse_bi5(raw_bytes, day_date):
     rows = []
     for i in range(n):
         b = data[i * record_size: (i + 1) * record_size]
-        t_ms, o, h, l, c = struct.unpack(">IIIII", b[:20])
-        ts = base + pd.Timedelta(milliseconds=int(t_ms))
+        t_s, o, c, l, h = struct.unpack(">IIIII", b[:20])
+        ts = base + pd.Timedelta(seconds=int(t_s))
         rows.append({
             "time": ts,
             "open":  o / POINT,
@@ -104,12 +107,18 @@ def main():
     ap.add_argument("--instrument", default=INSTRUMENT,
                     help="Dukascopy symbol, e.g. EURUSD, GBPUSD, AUDUSD (USD-quoted pairs only)")
     ap.add_argument("--out",   default=None, help="default: data/<INSTRUMENT>_M1_duka.csv")
+    ap.add_argument("--point", type=float, default=None,
+                    help="price scale: 100000 for 5-decimal FX (default), 1000 for 3-decimal "
+                         "(JPY pairs, indices such as USATECHIDXUSD = NASDAQ 100)")
     ap.add_argument("--delay", type=float, default=0.1,
                     help="Seconds between requests (be polite to their server)")
     args = ap.parse_args()
 
     instrument = args.instrument.upper()
     args.out = args.out or f"data/{instrument}_M1_duka.csv"
+    if args.point:
+        global POINT
+        POINT = args.point
     start = date.fromisoformat(args.start)
     end   = date.fromisoformat(args.end)
     total_days = (end - start).days + 1

@@ -14,7 +14,7 @@ from .strategies import (LondonBreakout, LondonCloseReversal, LondonSweep,
                           TinyRangeFade, TrendFollow, KeyLevels, OpeningRange,
                           TrendPullback, DailyPullback, VolBreakout, NarrowRangeBreak,
                           TurtleSoup, EightyTwenty, HolyGrail, IDNR4,
-                          TDSequential, BollingerSqueeze, DoubleSeven, WeekendGap)
+                          TDSequential, BollingerSqueeze, DoubleSeven, WeekendGap, FVG123)
 
 STRATEGY_MAP = {
     "daily_pullback":   DailyPullback,
@@ -39,6 +39,7 @@ STRATEGY_MAP = {
     "prev_day_breakout": PrevDayBreakout,
     "mean_reversion":   MeanReversion,
     "weekend_gap":      WeekendGap,
+    "fvg123":           FVG123,
 }
 
 

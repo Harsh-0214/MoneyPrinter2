@@ -490,3 +490,24 @@ A later brake raises both typical and unlucky ends in the reshuffles, at 2-5 poi
 on the actual order it isn't better (12/20/24: avg month 3.98 / 6.51 / 7.09 vs live 4.06 / 6.54 / 7.04,
 max DD -20.8 / -22.1 vs -17.2 / -19.7). A later brake is an option (more expected profit, deeper dips);
 the live brake stays.
+
+## Nov 14 2026 - ICT "1-2-3" fair value gap strategy (YouTube): rejected
+
+`fxbot/strategies/fvg123.py` (research only), `run_fvg123.py`. Rules made strict: daily FVG (3-day
+gap, valid until a daily close through its far edge, traded once); touch; inversion of an opposite FVG
+on the 1-, 2- and 3-minute bars, all within 30 min; entry when the last completes; stop beyond the far
+edge of the daily gap; target the nearest unmitigated 15-min FVG (as in the video), or 15-min FVG only
+if >= 1R, 2R, 3R, or none; out 21:00 London. x all day / active hours x 1-2-3 / 1-2-3-5.
+Data: histdata M1 2021-25 (EUR, GBP, gold, JPY) and Dukascopy NASDAQ 100 M1 2021 - Nov 2026
+(`download_dukascopy.py --instrument USATECHIDXUSD --point 1000`; the downloader's bar parser was
+fixed: Dukascopy candles are seconds + open/close/low/high).
+
+- The coded rules reproduce the video's example: NASDAQ 4 Nov 2026, short 10:02 New York at 28,731,
+  15-min gap target hit 10:44 at 28,560 (+171 points, +0.91R).
+- 100 runs, 0 pass. FX + gold: all 80 lose (PF 0.43-1.00). NASDAQ with the video's 15-min target:
+  PF 0.62-0.74, -15 to -23R over 2021-25. Best NASDAQ version (2R target, all day): PF 1.04, +3R
+  in 5 years, 3/5 years up. 2026 is positive on NASDAQ in every version (+2 to +49R), after four of
+  five losing or flat years.
+- Why: the win rate really is high (56-64%), but the 15-min target is usually close (average win
+  ~0.47R) while the stop at the daily gap's far edge is far (average loss ~0.8R). With zero costs it
+  is break-even (EURUSD +0.01R, gold +0.01R a trade): no edge before costs, a loss after them.
