@@ -443,3 +443,23 @@ but in the portfolio it doesn't: avg month 4.06 -> 4.01, 6.54 -> 6.15, 7.03 -> 7
 means a bigger position for the same risk, which hits the 14x leverage cap and the margin limit and
 crowds out other trades. (0.3 hits those limits so hard the replay skips most trades: not usable.)
 Live stops stay.
+
+## Nov 14 2026 - Risk levels on a $3,000 account; total-risk cap and margin limit off
+
+`run_risk_levels.py --start 3000` (all live trades Jan 2021 - Nov 2026, brake on, 1,000 reshuffles).
+Typical / unlucky (1 in 10) end balance:
+
+| risk | live limits | 12% total-risk cap off | cap off + margin to 95% (not safe) |
+|------|-------------|-------------------------|-------------------------------------|
+| 3% | 132k / 79k | 135k / 82k | 236k / 144k |
+| 6% | 121k / 53k | 149k / 68k | 266k / 120k |
+| 8% | 121k / 47k | 142k / 58k | 237k / 86k |
+| 10% | 42k / 22k | 133k / 52k | 208k / 77k |
+| 15% | no trades (every trade over the cap) | 109k / 39k | 156k / 50k |
+
+At 3% the 12% cap almost never binds (510 vs 509 trades). With it off, 6% raises the typical end
+but lowers the unlucky one and doubles+ the biggest single loss. The margin limit (70% of equity) is
+what binds at every level, mostly gold (22% margin). It can't safely go higher: at 95% used the margin
+level is ~105%, under the broker's 120% margin call, so a small move against the open trades gets
+positions closed by the broker; the replay books P/L only at exit and doesn't model that. Nothing
+changed. A broker / account with lower gold margin would be the only safe way to loosen it.

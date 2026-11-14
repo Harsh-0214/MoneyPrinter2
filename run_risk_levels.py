@@ -54,7 +54,13 @@ def main():
     ap.add_argument("--start", type=float, default=3000)
     ap.add_argument("--mc", type=int, default=1000)
     ap.add_argument("--levels", default="", help="e.g. 6,8,10,12,15 (with brake); default = the standard set")
+    ap.add_argument("--no-cap", action="store_true", help="switch off live.max_open_risk_pct (12 pct total risk)")
+    ap.add_argument("--margin", type=float, default=None, help="override live.max_margin_used_pct (70)")
     a = ap.parse_args()
+    if a.no_cap:
+        A.LIVE["max_open_risk_pct"] = None
+    if a.margin:
+        A.LIVE["max_margin_used_pct"] = a.margin
     h, m = A._load("hist"), A._load("mt5")
     t = pd.concat([h[h.entry_time < "2026-01-01"], m[m.entry_time >= "2026-01-01"]]).sort_values("entry_time")
     t = t.reset_index(drop=True)
