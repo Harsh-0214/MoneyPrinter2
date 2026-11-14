@@ -119,6 +119,8 @@ class RiskManager:
 
     def can_trade(self, equity, t_utc):
         if self.daily_loss_hit(equity):
+            self.skip_note = ("daily_loss", f"the account is down {self.max_daily_loss_pct:g}% or more today "
+                                            "(daily loss limit), so no new trades until tomorrow")
             return False
         ev = self.news_hit(t_utc)
         if ev is not None:
@@ -135,6 +137,7 @@ class RiskManager:
         """Units such that hitting the stop loses risk_per_trade_pct of equity."""
         if self.min_stop_spreads > 0 and spread_pips > 0 and                 abs(entry_price - stop_price) < self.min_stop_spreads * spread_pips * self.pip:
             self.skipped_tight_stops += 1
+            self.skip_note = ("tight_stop", f"its stop would be closer than {self.min_stop_spreads:g}x the spread")
             return 0                                   # stop too tight for the spread
         dist = abs(entry_price - stop_price) + spread_pips * self.pip
         if dist <= 0:
@@ -142,7 +145,10 @@ class RiskManager:
         fx = self.quote_to_account if self.quote_to_account > 0 else 1.0
         units = equity * self.risk_pct / 100 / (dist * fx)
         units = min(units, equity * self.max_leverage / (entry_price * fx))   # leverage cap
-        return int(units // self.min_units * self.min_units)
+        out = int(units // self.min_units * self.min_units)
+        if out <= 0:
+            self.skip_note = ("size", "the trade size rounds down to less than the smallest lot the broker allows")
+        return out
 
 
 def protect_before_news(risk, broker, bar_close_utc, last_price, spread_price=0.0):

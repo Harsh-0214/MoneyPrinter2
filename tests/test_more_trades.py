@@ -171,3 +171,53 @@ def test_weekend_gap_skips_small_gaps():
     sun = pd.Timestamp("2024-01-14 22:00", tz="UTC")
     rows += [(sun + pd.Timedelta(minutes=m), 1.1010, 1.1012, 1.1008, 1.1010) for m in (0, 15, 30)]
     assert _feed(s, rows, _Broker(), _Risk()) == []
+
+
+def test_vbo_trend_block_leaves_a_skip_note():
+    """2-day trend falling (closes 102 then 100.5): a close above the buy level is blocked."""
+    s = VolBreakout(dict(k=0.5, stop_range=0.5, trend_sma=2, entry_start="00:00", entry_end="23:00",
+                         exit_time="23:30"), 0.01)
+    t0 = pd.Timestamp("2024-01-08 00:00", tz="UTC")       # Monday (skip_days default: none)
+    rows = [(t0 + pd.Timedelta(hours=k), 102.0, 102.5, 101.5, 102.0) for k in range(24)]
+    d1 = t0 + pd.Timedelta(days=1)
+    rows += [(d1 + pd.Timedelta(hours=k), 100.5, 101.0, 100.0, 100.5) for k in range(24)]
+    d2 = t0 + pd.Timedelta(days=2)
+    rows += [(d2, 100.6, 100.7, 100.5, 100.6),             # buy level 100.6 + 0.5 x 1.0 = 101.1
+             (d2 + pd.Timedelta(hours=1), 100.6, 101.3, 100.6, 101.2)]
+    assert _feed(s, rows, _Broker(), _Risk()) == []
+    assert s.skip_note[0] == "trend" and "only sells are allowed" in s.skip_note[1]
+
+
+def test_risk_manager_notes_daily_loss_and_tiny_size():
+    from fxbot.risk import RiskManager
+    cfg = yaml.safe_load(open("config.yaml"))["risk"]
+    cfg = dict(cfg, news_filter=False)
+    r = RiskManager(cfg, 0.0001, "EURUSD")
+    r.new_day(10000)
+    assert not r.can_trade(9000, pd.Timestamp("2025-01-07 10:00", tz="UTC"))
+    assert r.skip_note[0] == "daily_loss"
+    r.skip_note = None
+    assert r.position_size(10, 1.1, 1.0) == 0 and r.skip_note[0] == "size"
+
+
+def test_live_runner_says_each_skip_once_per_day():
+    import logging
+    from run_live import StrategyRunner
+    said = []
+    h = logging.Handler(); h.emit = lambda rec: said.append(rec.getMessage())
+    nl = logging.getLogger("fxbot.narrate"); nl.addHandler(h); nl.setLevel(logging.INFO)
+    try:
+        r = StrategyRunner.__new__(StrategyRunner)
+        r.label, r.log = "London", logging.getLogger("t")
+        strat = SimpleNamespace(skip_note=("trend", "the trend is DOWN"))
+        r.morning, r.risk, r._skip_seen = [strat], SimpleNamespace(skip_note=None), set()
+        r._collect_skips(None)                       # startup replay: cleared, not said
+        assert said == [] and strat.skip_note is None
+        for _ in range(3):
+            strat.skip_note = ("trend", "the trend is DOWN")
+            r._collect_skips("2026-11-16")
+        strat.skip_note = ("trend", "the trend is DOWN")
+        r._collect_skips("2026-11-17")
+        assert said == ["London did not trade: the trend is DOWN."] * 2
+    finally:
+        nl.removeHandler(h)

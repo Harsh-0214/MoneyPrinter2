@@ -142,6 +142,10 @@ class PortfolioRiskGuard:
         if used + self._new > self._cap + 1e-6:
             log.warning("RISK CAP: %.0f already at risk + %.0f new > cap %.0f - trade skipped",
                         used, self._new, self._cap)
+            from fxbot import narrate
+            narrate.say("Trade skipped: open trades already risk %s and this one adds %s, over the "
+                        "total limit of %s (live.max_open_risk_pct).",
+                        f"{used:,.0f}", f"{self._new:,.0f}", f"{self._cap:,.0f}")
             return False
         return self._b.submit(order)
 
@@ -665,6 +669,8 @@ class StrategyRunner:
                 self.fired_day = route_morning(self.morning, bar, day, lmin, replay, self.risk,
                                                self.fired_day, self.slot_limit)
                 self.last_ts = bar.Index
+        self._skip_seen = set()
+        self._collect_skips(None)                  # replayed history: old skips are not narrated
         if broker.position() is not None and self.cur_day is not None:
             self.fired_day = self.cur_day           # a position from today uses the slot
             for s in self.morning:
@@ -753,6 +759,7 @@ class StrategyRunner:
             self.fired_day = route_morning(self.morning, bar, day, lmin, broker, self.risk,
                                            self.fired_day, self.slot_limit)
             self.last_ts = bar.Index
+            self._collect_skips(day)
         if len(new):
             self.last_bar = (new.index[-1], new.iloc[-1])     # newest closed candle (terminal MT5 line)
         if had_pos and broker.position() is None:
@@ -763,6 +770,24 @@ class StrategyRunner:
         # what changed in plain English (for the terminal); new_bars for the quiet line
         self.changed = [v for k, v in self.last_status.items() if v and before.get(k) != v]
         self.new_bars = len(new)
+
+    def _collect_skips(self, day):
+        """Each rule that blocked a trade sets `skip_note = (kind, text)` on the strategy or the
+        RiskManager. Say it in the terminal once per day per rule; day=None only clears them."""
+        from fxbot import narrate
+        for obj in list(self.morning) + [self.risk]:
+            note = getattr(obj, "skip_note", None)
+            if not note:
+                continue
+            obj.skip_note = None
+            if day is None:
+                continue
+            key = (str(day), type(obj).__name__, note[0])
+            if key in self._skip_seen:
+                continue
+            self._skip_seen.add(key)
+            self.log.info("SKIP (%s): %s", note[0], note[1])
+            narrate.say("%s did not trade: %s.", self.label, note[1])
 
     def overlay_lines(self):
         from fxbot.overlay import build_lines

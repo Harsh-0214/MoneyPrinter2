@@ -251,6 +251,7 @@ class LondonSweep:
         import pandas as pd
         t = pd.Timestamp(bar.Index).tz_convert("Europe/London").strftime("%H:%M")
         self.last_reject = f"BOS at {t} not traded: {why}"
+        self.skip_note = ("reject", f"a stop-hunt reversal formed at {t} but was not traded: {why}")
 
     def _build_short_order(self, bar, broker, risk) -> Optional[Order]:
         spread_px = bar.spread_pips * self.pip
