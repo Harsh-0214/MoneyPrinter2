@@ -335,3 +335,24 @@ reward/risk and max stop, Breakout min/max range and the 15-pip "already ran" ca
 
 The near-misses are break-even trades as a group: more trades, no more profit, and 2024-25
 falls apart from 10% on. 0.5% is noise (one period up, one down). The live thresholds stay.
+
+## Nov 14 2026 - Optimising the London limits, walk-forward: live limits kept
+
+`run_london_optimize.py`. 155 settings: Breakout min range 16-28 pips x max range 60/80/100/none
+x "already ran" cap 10-25/none, and Sweep min reward/risk 1.0-2.0 x max stop 20-40 pips.
+Score = total R at 1% risk, EURUSD + GBPUSD. Each test year uses the limits that scored best
+(as a plateau: the setting plus its grid neighbours) on the years BEFORE it only; 2026 uses the
+broker's own M5/M15 feed.
+
+| test year | limits picked on | picked Breakout (min / max range, cap) | picked R | live R |
+|-----------|------------------|----------------------------------------|----------|--------|
+| 2023      | 2021-22          | 16 / 100 / none (124 trades vs 53)     | +3.2     | +3.4   |
+| 2024      | 2021-23          | 16 / 100 / 20                          | -3.4     | +0.6   |
+| 2025      | 2021-24          | 16 / none / 15                         | +11.8    | +16.3  |
+| 2026      | 2021-25          | 16 / 100 / 15 (53 trades vs 37)        | +8.9     | +10.3  |
+
+The optimiser always wants a lower minimum range (16 pips) to get more trades. It wins on the
+years it was picked on (best 2021-25: +53.2R vs live +44.6R) and loses to the live limits in
+every one of the four unseen years. All of the top 10 settings on 2021-25 made less than the live
+limits in 2026 (+4.9 to +9.7R vs +10.3R). Sweep: min reward/risk 1.25 or 1.5 with any max stop
+gives the same within 1.3R over 5 years (2 trades); 1.0 loses 6-9R. Nothing changed.
