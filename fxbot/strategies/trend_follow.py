@@ -54,6 +54,10 @@ class TrendFollow:
         self.short_only = cfg.get("short_only", False)
         self.score      = float(cfg.get("score", 100))
         self.add_on_r   = float(cfg.get("add_on_r", 0.0))     # 0 = normal entries
+        # intraday_entry: enter on the first BAR close beyond the channel instead of waiting
+        # for the daily close (Turtle-style). Exits / trailing stay daily. One entry per day.
+        self.intraday   = bool(cfg.get("intraday_entry", False))
+        self.day_traded = False
         self.armed      = None   # add-on: (side, trigger price, stop price, main initial stop)
         keep = max(self.entry_days, self.exit_days or 0, self.atr_days, 2) + 5
         self.days = deque(maxlen=keep)      # completed (high, low, close)
@@ -112,6 +116,18 @@ class TrendFollow:
             return -1
         return 0
 
+    def _intraday_signal(self, price):
+        """+1 / -1 / 0: the current price versus the channel of COMPLETED days."""
+        d = list(self.days)
+        if self.signal != "donchian" or len(d) < self.entry_days:
+            return 0
+        window = d[-self.entry_days:]
+        if price > max(h for h, _, _ in window):
+            return 1
+        if price < min(l for _, l, _ in window):
+            return -1
+        return 0
+
     def _exit_channel_hit(self, side):
         if not self.exit_days:
             return False
@@ -154,10 +170,15 @@ class TrendFollow:
             # the first bar of the day already fires.
             if pos is None and self.pending:
                 return self._entry(self.pending, self.pending_atr, bar, broker, risk)
+            if pos is None and self.intraday and not self.day_traded and self.last_atr:
+                sig = self._intraday_signal(bar.close)
+                if sig and not ((sig == 1 and self.short_only) or (sig == -1 and self.long_only)):
+                    return self._entry(sig, self.last_atr, bar, broker, risk)
             return None
 
         sig = self._signal()          # always evaluated so EMA state stays current
         atr = self._atr()
+        self.day_traded = False
         self.pending, self.pending_atr = 0, None
         self.last_sig, self.last_atr = sig, atr
         if pos is not None:
@@ -223,6 +244,7 @@ class TrendFollow:
     def mark_fired(self):
         self.pending = 0
         self.armed = None
+        self.day_traded = True
 
     def describe(self, local_min=None):
         """Chart overlay: entry channel, exit channel, trailing stop, status."""

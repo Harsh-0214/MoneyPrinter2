@@ -39,7 +39,8 @@ past prices. In everyday words:
   lost money in every test.
 - **USDJPY: the big-move breakout.** If the dollar/yen moves unusually far from where the day
   started (in the direction of its longer trend), it often keeps going until evening. The bot
-  joins it and closes everything at 9 pm UK time.
+  joins it and closes everything at 9 pm UK time. If that first attempt is stopped out and the
+  price breaks out again the same day, it takes one second try.
 
 **How often does it trade?** About 100 trades a year across all four markets, roughly 8–9 a month.
 Several quiet days in a row are normal. Gold trades only a few times a year but holds for weeks.
@@ -129,7 +130,7 @@ A real-money account is blocked unless you deliberately turn it on twice
 
 ## What was tried and didn't work
 
-About 320 ideas were tested with the same strict rules (all costs included, rules fixed before
+About 600 tests were run with the same strict rules (all costs included, rules fixed before
 testing, checked on years not used to design them). Only the strategies above passed. Things that
 **did not** work:
 
@@ -146,6 +147,17 @@ testing, checked on years not used to design them). Only the strategies above pa
   strategies. On big US companies, simply owning the stocks beat every trading strategy tested.
   Holding the strongest 3 each month did better than holding all of them, but that suits real
   shares in an investment account, not this bot (stock CFDs charge about 7% a year to hold).
+- **Weekend gaps** (betting that Sunday's opening jump closes back to Friday's price): lost on
+  4 of 5 markets. The Sunday spread and the big news gaps that never close eat the edge.
+- **28 more markets** (copper, natural gas, UK oil, sugar, coffee, 7 more stock indexes, 17
+  currency pairs such as USD/CAD and EUR/GBP) with the strategies that already work: nothing
+  solid. A CHF/JPY dip-buying result looked good on 2019-26 and fell apart on 2011-18.
+- **Squeezing more out of gold and USDJPY**: a faster gold system, bigger gold "add to winners",
+  entering gold during the day instead of at the daily close, and adding to USDJPY winners.
+  Some looked good alone, but in the whole account gold already uses most of the margin, and the
+  USDJPY add-on lost every trade in 2026. The one thing that did pass, a second USDJPY try after
+  a same-day stop-out, is now live. Dropping USDJPY's trend filter (twice the trades, much better
+  2026, slightly worse 2024-25 and deeper dips) is written up in `config.yaml` as an option.
 
 Details of every test: `docs/RESEARCH_LOG.md` (and older ones in `docs/RESEARCH_HISTORY.md`).
 
@@ -195,7 +207,7 @@ Everything below is for working on the code.
 | | Gold trend following, 20-day breakout, buy-only | 1 h | ~6 | 4% | 12447 | same |
 | | Add-on to the 55-day trend once it is +0.5R | 1 h | ~4 | 4% | 12547 | same |
 | | Add-on to the 20-day trend once it is +0.5R | 1 h | ~4 | 4% | 12647 | same |
-| **USDJPY** | Volatility breakout (day open ± 0.9 × yesterday's range), 50-day trend | 15 min | ~15 | 4% | 12348 | 05:00–12:00 London, exits 21:00 |
+| **USDJPY** | Volatility breakout (day open ± 0.9 × yesterday's range), 50-day trend, second try after a stop-out | 15 min | ~16 | 4% | 12348 | 05:00–12:00 London, exits 21:00 |
 
 In `config.yaml`, a market's main stack is its `pairs:` entry and each extra strategy is a
 `sleeves:` item under it. A pair can override the global risk with its own `risk:` block.
@@ -281,8 +293,14 @@ month 3.9% → 4.9%, max drawdown unchanged.
   12–16 London is the US-data whipsaw). Everything closes at 21:00.
 - **Stop:** 0.5 × yesterday's range; moves to entry at +1R. No fixed target (the best
   breakouts run past 2–3R).
-- 2021–25: PF 2.35, max drawdown −5.0%; 2026 out-of-sample +6.8%. Its monthly returns are
+- **Second try (Nov 13 2026):** if the first breakout is stopped out and a candle closes beyond
+  the level again the same day, it enters once more (`slot_max_trades: 2`, `max_trades_per_day: 2`).
+  2021–25: PF 2.35 → 2.52, +7.5R from 6 extra trades, 4/5 years up (was 3/5); 2026 unchanged.
+- 2021–25: PF 2.52, max drawdown −5%; 2026 out-of-sample +6.8%. Its monthly returns are
   close to uncorrelated with the rest of the portfolio (−0.08).
+- Option, not applied: `trend_sma: null` (trade against the 50-day trend too) doubles the
+  trades, 2021–25 +42R vs +36R and 2026 +25R vs +6R, but halves the profit per trade and
+  deepens the portfolio drawdowns 1–2.4 points (docs/RESEARCH_LOG.md, Nov 13 evening).
 - The same rule lost on EURUSD, GBPUSD and gold (see docs/RESEARCH_HISTORY.md), so it trades USDJPY only.
 
 
@@ -310,7 +328,7 @@ python -m venv venv
 venv\Scripts\activate
 pip install -r requirements.txt
 copy .env.example .env          # fill in MT5 login, password, server, terminal path
-python -m pytest -q             # 96 tests
+python -m pytest -q             # 104 tests
 python run_backtest.py --synthetic   # random data: should lose ~the spread
 ```
 
@@ -406,6 +424,12 @@ run_stock_edges.py       stock-specific strategies: RSI-2 dip, IBS, gap drift, p
 run_carry.py             carry trade across 8 currencies, OECD rates (research, rejected)
 run_news_reaction.py     follow / fade the first 15 min after big news (research, rejected)
 fetch_mt5_extra.py       NZD daily + 2026 five-minute bars for the two tests above
+fetch_mt5_more.py        broker H1 for 29 more markets + M15 for the live pairs and 5 crosses
+run_more_trades.py       variants of the live units (re-entry, add-ons, faster gold, intraday, weekend gap)
+run_portfolio_add.py     what a candidate unit adds to the live portfolio (margin, brake, 4% gold/JPY)
+run_london_more.py       London Breakout "ran too far" cap re-test (15 stays)
+run_london_crosses.py    London stack on AUD/CAD/CHF/NZD/EURGBP (broker M15, rejected)
+run_chfjpy_pullback.py   CHFJPY pullback 2011-2026 long-history check (rejected)
 docs/RESEARCH_LOG.md     every test, its rules and result (older: docs/RESEARCH_HISTORY.md)
 run_live.py              live/demo runner (one bot per market, runs all its strategies)
 run_report.py            demo results vs backtest expectations
@@ -422,9 +446,9 @@ fxbot/
   brokers/  sim_broker.py  mt5_broker.py  base.py
   overlay.py             writes the chart-overlay file for MT5
   strategies/  london_sweep.py  london_breakout.py  trend_follow.py (gold)  daily_patterns.py (pullback, USDJPY breakout)
-               (+ opening_range, trend_pullback, key_levels, tiny_range_fade,
+               (+ opening_range, trend_pullback, key_levels, tiny_range_fade, weekend_gap,
                   london_close_reversal, ny_breakout, prev_day, mean_reversion: tested, unused)
-tests/                   96 unit tests
+tests/                   104 unit tests
 ```
 
 ## High-impact news filter (`fxbot/news.py`)

@@ -293,6 +293,22 @@ pairs:
               long_only: true
               add_on_r: 0.5
           afternoon: []
+      # OPTION (Nov 13 2026, run_more_trades.py / run_portfolio_add.py): a 10-day/5-day gold
+      # trend sleeve. Alone: 8.8 trades/yr, PF 3.03, 4/5 years, 2026 +5.2R, 2019-20 +4.7R.
+      # Portfolio: avg month 3.92 -> 4.36 (2021-23), 6.34 -> 6.87 (2024-25) but 7.04 -> 6.89 (2026)
+      # and 2024-25 max DD -19.7 -> -20.6 (gold margin crowds out other trades). Not applied.
+      # - name: fast10             # magic 12747
+      #   warmup_days: 120
+      #   strategies:
+      #     morning:
+      #       - name: trend_follow
+      #         signal: donchian
+      #         entry_days: 10
+      #         exit_days: 5
+      #         atr_days: 20
+      #         stop_atr: 2.0
+      #         long_only: true
+      #     afternoon: []
 
   # --- USD/JPY: volatility breakout (Nov 2026 research, run_arsenal.py + grid) ---
   # Day's open +/- 0.9 x yesterday's range, 07:00-16:00 London, only with the 50-day
@@ -315,17 +331,28 @@ pairs:
       swap_long_per_lot: 0.0
       swap_short_per_lot: -10.0
     warmup_days: 100             # live: replay ~100 days to rebuild the 50-day trend
+    slot_max_trades: 2           # Nov 13 2026: a second try after a same-day stop-out (see below)
     strategies:
       morning:
         - name: vol_breakout
           k: 0.9
+          max_trades_per_day: 2      # Nov 13 2026 (run_more_trades.py): after a stop-out, a second
+                                     #   close beyond the level the same day is taken. 2021-25: PF 2.35
+                                     #   -> 2.52, +1.5R / +6.0R more in 2021-23 / 2024-25, 4/5 years up
+                                     #   (was 3/5); 2026 unchanged (no second tries happened). Portfolio
+                                     #   avg month 3.92 -> 4.05 (2021-23), 6.34 -> 6.54 (2024-25), same DD.
           entry_start: "05:00"       # Nov 2026 window grid (start 03-07 x end 10-16): every window ending
           entry_end: "12:00"         #   12:00 beat 16:00 (12-16 London = US data/NY open whipsaw).
                                      #   05-12 vs 07-16: 2021-25 PF 2.35 vs 1.58, DD -5.0% vs -7.5%;
                                      #   2026 +6.8% vs +4.2%. Results/entry_windows.csv.
           exit_time: "21:00"
           stop_range: 0.5
-          trend_sma: 50
+          trend_sma: 50              # OPTION (Nov 13 2026): `trend_sma: null` trades against the trend
+                                     #   too: 27 trades/yr (was 15), PF 1.69 (was 2.35), 2021-25 total
+                                     #   +42R vs +36R, 2026 +25R vs +6R. Portfolio (at 4%): avg month
+                                     #   3.92 -> 4.48 / 6.34 -> 5.94 / 7.04 -> 12.6, max DD 1-2.4 points
+                                     #   deeper (-18.4 / -21.1 / -10.9). Not applied: one period down
+                                     #   and deeper drawdowns; 2026 carries it. Revisit with more data.
           trail_to_breakeven_rr: 1.0  # stop -> entry at +1R. Fixed targets cut profit by half
                                       #   (best breakouts run past 2-3R before 21:00).
           skip_days: [0]

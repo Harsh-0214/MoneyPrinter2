@@ -554,7 +554,7 @@ def _unit(cfg, pair, sleeve=None):
 
 
 STRATEGY_LABELS = {"london_sweep": "London", "london_breakout": "London",
-                   "daily_pullback": "Pullback", "trend_follow": "Trend"}
+                   "daily_pullback": "Pullback", "trend_follow": "Trend", "vol_breakout": "Breakout"}
 
 
 def _label(unit_cfg):
@@ -564,6 +564,8 @@ def _label(unit_cfg):
         lab = STRATEGY_LABELS.get(s["name"], s["name"])
         if s["name"] == "trend_follow":
             lab = f"Trend {s.get('entry_days', 55)}d" + (" add-on" if s.get("add_on_r") else "")
+        if s["name"] == "vol_breakout" and s.get("add_on_r"):
+            lab = "Breakout add-on"
         if lab not in names:
             names.append(lab)
     return "+".join(names)

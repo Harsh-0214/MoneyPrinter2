@@ -38,7 +38,39 @@ MARKETS = {
     # reference: markets already live, same feed, to compare with the histdata results
     "XAUUSD":  ("data/mt5/XAUUSD_H1.csv",  80,  (-6.5, -1.5)),
     "USDJPY":  ("data/mt5/USDJPY_H1.csv",  16,  (0.0, -2.0)),
+    # --- round 2 (13 Nov 2026, fetch_mt5_more.py): spread floor = median of the last 90 days
+    "Copper":       ("data/mt5/Copper_H1.csv",       25, (-6.5, -1.5)),
+    "USNaturalGas": ("data/mt5/USNaturalGas_H1.csv", 11, (-6.5, -1.5)),
+    "UKOil":        ("data/mt5/UKOil_H1.csv",         5, (-6.5, -1.5)),
+    "SugarCash":    ("data/mt5/SugarCash_H1.csv",    20, (-6.5, -1.5)),
+    "US2000":       ("data/mt5/US2000_H1.csv",        6, (-6.5, -1.5)),
+    "AUS200":       ("data/mt5/AUS200_H1.csv",        4, (-6.5, -1.5)),
+    "CHINAA50":     ("data/mt5/CHINAA50_H1.csv",     10, (-6.5, -1.5)),
+    "FRA40":        ("data/mt5/FRA40_H1.csv",        23, (-6.5, -1.5)),
+    "ESP35":        ("data/mt5/ESP35_H1.csv",         8, (-6.5, -1.5)),
+    "SWISS20":      ("data/mt5/SWISS20_H1.csv",       4, (-6.5, -1.5)),
+    "USDCAD":       ("data/mt5/USDCAD_H1.csv",       11, (0.0, -2.0)),
+    "USDCHF":       ("data/mt5/USDCHF_H1.csv",       16, (0.0, -2.0)),
+    "NZDUSD":       ("data/mt5/NZDUSD_H1.csv",       19, (0.0, -2.0)),
+    "AUDUSD":       ("data/mt5/AUDUSD_H1.csv",       11, (0.0, -2.0)),
+    "EURGBP":       ("data/mt5/EURGBP_H1.csv",       13, (0.0, -2.0)),
+    "EURAUD":       ("data/mt5/EURAUD_H1.csv",       31, (0.0, -2.0)),
+    "GBPAUD":       ("data/mt5/GBPAUD_H1.csv",       57, (0.0, -2.0)),
+    "EURCAD":       ("data/mt5/EURCAD_H1.csv",       32, (0.0, -2.0)),
+    "GBPCAD":       ("data/mt5/GBPCAD_H1.csv",       45, (0.0, -2.0)),
+    "AUDNZD":       ("data/mt5/AUDNZD_H1.csv",       50, (0.0, -2.0)),
+    "EURCHF":       ("data/mt5/EURCHF_H1.csv",       11, (0.0, -2.0)),
+    "GBPCHF":       ("data/mt5/GBPCHF_H1.csv",       40, (0.0, -2.0)),
+    "AUDCAD":       ("data/mt5/AUDCAD_H1.csv",       35, (0.0, -2.0)),
+    "NZDJPY":       ("data/mt5/NZDJPY_H1.csv",       30, (0.0, -2.0)),
+    "CHFJPY":       ("data/mt5/CHFJPY_H1.csv",       35, (0.0, -2.0)),
+    "EURNZD":       ("data/mt5/EURNZD_H1.csv",       60, (0.0, -2.0)),
+    "GBPNZD":       ("data/mt5/GBPNZD_H1.csv",       80, (0.0, -2.0)),
 }
+ROUND2 = [m for m in MARKETS if m in ("Copper", "USNaturalGas", "UKOil", "SugarCash", "US2000", "AUS200",
+                                       "CHINAA50", "FRA40", "ESP35", "SWISS20") or
+          (len(m) == 6 and m.isupper() and m not in ("XAUUSD", "USDJPY", "XAGUSD", "EURJPY", "GBPJPY",
+                                                     "CADJPY", "AUDJPY", "SPX500", "NAS100", "GER40", "UK100", "JPN225"))]
 
 BASE = yaml.safe_load(open("config.yaml"))
 _P = {p["symbol"]: p for p in BASE["pairs"]}
@@ -107,8 +139,8 @@ def _run(job):
     from run_validate import summarize, per_year
     name, sym = job
     c = make_cfg(sym, STRATS[name])
-    if "JPY" in sym and sym != "USDJPY":
-        c["instrument"]["min_units"] = 1000
+    if len(sym) == 6 and sym.isupper() and sym not in ("XAUUSD", "XAGUSD", "SPX500", "NAS100", "GER40", "UK100", "USDJPY"):
+        c["instrument"]["min_units"] = 1000          # FX crosses: micro lots
     se = c["account"]["starting_equity"]
     t, eq = run_backtest(_BARS[sym], c)
     if not len(t):
@@ -134,11 +166,12 @@ def _run(job):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--markets", default=",".join(MARKETS))
+    ap.add_argument("--round2", action="store_true", help="only the markets added on 13 Nov 2026")
     ap.add_argument("--only", default="")
     ap.add_argument("--workers", type=int, default=6)
     ap.add_argument("--out", default="results/new_markets.csv")
     a = ap.parse_args()
-    markets = [m for m in a.markets.split(",") if os.path.exists(MARKETS[m][0])]
+    markets = [m for m in (ROUND2 if a.round2 else a.markets.split(",")) if os.path.exists(MARKETS[m][0])]
     jobs = [(n, s) for n in STRATS if a.only.lower() in n.lower() for s in markets]
     print(f"{len(jobs)} runs ...", flush=True)
     rows = []

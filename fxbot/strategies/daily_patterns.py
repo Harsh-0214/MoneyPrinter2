@@ -195,13 +195,26 @@ class VolBreakout:
         self.be = float(cfg.get("trail_to_breakeven_rr", 0.0))
         self.score = float(cfg.get("score", 50))
         self._skip = set(int(x) for x in cfg.get("skip_days", []))
+        # max_trades_per_day: 1 = classic; 2 = may re-enter after a stop-out the same day
+        # (the unit's slot_max_trades must allow it too).
+        self.max_trades = int(cfg.get("max_trades_per_day", 1))
+        # add_on_r > 0: "adding to a winner" unit. Doesn't trade the breakout itself; once
+        # price is add_on_r x the main trade's risk beyond the level, buys a second position
+        # whose stop is the breakout level. Disarms if the main stop would have been hit.
+        self.add_on_r = float(cfg.get("add_on_r", 0.0))
         self.d = _Daily()
         self.levels = None
-        self.traded = False
+        self.n_traded = 0
+        self.main_side = 0          # add-on mode: side of the main breakout seen today
+
+    @property
+    def traded(self):
+        return self.n_traded >= self.max_trades
 
     def propose(self, bar, local_day, local_min, broker, risk) -> Optional[TradeProposal]:
         if self.d.update(bar, local_day):
-            self.traded = False
+            self.n_traded = 0
+            self.main_side = 0
             self.levels = None
             if self.d.days:
                 o, h, l, c = self.d.days[-1]
@@ -221,6 +234,8 @@ class VolBreakout:
             return None
         up, dn, rng, trend, yclose = self.levels
         side = 1 if bar.close > up else (-1 if bar.close < dn else 0)
+        if self.add_on_r > 0:
+            return self._add_on(bar, side, up, dn, rng, trend, yclose, broker, risk)
         if side == 0:
             return None
         if trend is not None and ((side == 1 and yclose < trend) or (side == -1 and yclose > trend)):
@@ -231,8 +246,32 @@ class VolBreakout:
                    "vbo_long" if side == 1 else "vbo_short")
         return TradeProposal(o, self.score, self.NAME) if o else None
 
+    def _add_on(self, bar, side, up, dn, rng, trend, yclose, broker, risk):
+        """Add-on unit: arm on the main breakout, fire add_on_r R beyond the level."""
+        if self.main_side == 0:
+            if side == 0:
+                return None
+            if trend is not None and ((side == 1 and yclose < trend) or (side == -1 and yclose > trend)):
+                return None
+            self.main_side = side
+            return None                         # the main unit enters here; we wait
+        s = self.main_side
+        level = up if s == 1 else dn
+        main_stop = level - s * self.stop_k * rng
+        ext = bar.low if s == 1 else bar.high
+        if (ext - main_stop) * s <= 0:
+            self.main_side = 0                  # the main trade was stopped: no add-on today
+            self.n_traded = self.max_trades
+            return None
+        trigger = level + s * self.add_on_r * self.stop_k * rng
+        if (bar.close - trigger) * s < 0:
+            return None
+        o = _order(s, bar.close, level, None, bar, self.pip, broker, risk,
+                   "vbo_add_long" if s == 1 else "vbo_add_short")
+        return TradeProposal(o, self.score, self.NAME) if o else None
+
     def mark_fired(self):
-        self.traded = True
+        self.n_traded += 1
 
     def describe(self, local_min=None):
         """Chart overlay: today's buy/sell trigger levels, the day's open, the trend line,
@@ -273,9 +312,23 @@ class VolBreakout:
             msg = f"window closed ({hm(self.start)}-{hm(self.end)})"
         else:
             msg = f"watching until {hm(self.end)} London"
+        if self.add_on_r > 0:                      # add-on unit: show its own trigger
+            if self.main_side:
+                lvl = up if self.main_side == 1 else dn
+                trig = lvl + self.main_side * self.add_on_r * stop
+                out["lines"].append({"price": trig, "color": "gold", "style": "dash",
+                                     "label": f"ADD-ON {'buy' if self.main_side == 1 else 'sell'} if a candle closes "
+                                              f"{'above' if self.main_side == 1 else 'below'} (stop at the breakout level)"})
+                what = (f"breakout {'UP' if self.main_side == 1 else 'DOWN'} seen; adds at +{self.add_on_r:g}R "
+                        f"({trig:.{3 if self.pip >= 0.01 else 5}f}), stop at the level")
+            else:
+                what = f"waits for the main breakout, then adds at +{self.add_on_r:g}R"
+            out["status"] = f"Breakout add-on: {what}; {msg}; closes {hm(self.exit_min)}"
+            return out
         out["status"] = (f"Vol breakout: trend {'UP' if longs_ok and not shorts_ok else 'DOWN' if shorts_ok and not longs_ok else 'FLAT'}"
                          f" -> {side}; {msg}; stop {stop / self.pip:.0f}p, stop to breakeven at +{self.be:g}R, "
-                         f"closes {hm(self.exit_min)}")
+                         f"closes {hm(self.exit_min)}"
+                         + (f"; up to {self.max_trades} tries a day" if self.max_trades > 1 else ""))
         return out
 
     def on_bar(self, *a):
