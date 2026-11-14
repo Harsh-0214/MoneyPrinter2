@@ -422,3 +422,24 @@ and exits; 1% risk on the smaller stop. 48 settings on EURUSD / GBPUSD London, U
 - The signals that never dipped are the best trades: at the breakout price they made +16 to +72R
   (by setting), so waiting for a dip mostly removes winners. EURUSD lost in 46 of 48 period-cells.
 - Half at the breakout and half on the dip lands between the two results, so it can't beat both.
+
+## Nov 14 2026 - Stop distance ("does the room let losers get worse?"): live stops kept
+
+`run_stop_size.py`. Every trade risks the same % whatever the stop distance (size = risk / distance),
+so a wider stop means a smaller position, not a bigger loss. R at 1% risk, 2021-23 / 2024-25 / 2026:
+
+| strategy | stop | R | total |
+|----------|------|---|-------|
+| London Breakout | far side of the range (live) | +27.6 / +16.9 / +10.2 | +54.7 |
+| | range middle | +8.6 / -2.9 / +12.5 | +18.2 |
+| | 3 x ATR (15-min) | +12.7 / -4.9 / +6.2 | +14.0 |
+| | 1.5 x ATR | -21.4 / -24.6 / -2.2 | -48.2 |
+| gold 55-day | 1.5 / 2 (live) / 2.5 / 3 x daily ATR | totals 14.0 / 19.5 / 17.4 / 13.4 | |
+| gold 20-day | 1.5 / 2 (live) / 2.5 / 3 x daily ATR | totals 17.6 / 22.9 / 18.8 / 14.6 | |
+| USDJPY | 0.3 / 0.4 / 0.5 (live) / 0.6 / 0.7 x yesterday's range | totals 54.8 / 56.6 / 50.0 / 42.0 / 39.3 | |
+
+USDJPY at 0.4 beats 0.5 alone in all three periods (+35.2 / +13.8 / +7.6 vs +31.0 / +12.8 / +6.2),
+but in the portfolio it doesn't: avg month 4.06 -> 4.01, 6.54 -> 6.15, 7.03 -> 7.02. A tighter stop
+means a bigger position for the same risk, which hits the 14x leverage cap and the margin limit and
+crowds out other trades. (0.3 hits those limits so hard the replay skips most trades: not usable.)
+Live stops stay.
