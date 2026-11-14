@@ -27,7 +27,7 @@ def run(t, risk, live, start):
     yearly = full.resample("YE").last()
     return dict(final=full.iloc[-1], months=len(mret), avg_month=((full.iloc[-1] / start) ** (1 / len(mret)) - 1) * 100,
                 losing_months=int((mret < 0).sum()), worst_month=mret.min(), maxdd=dd.min() * 100,
-                dd_from=peak[i], dd_to=full[i], biggest_loss=money[taken].min(),
+                dd_from=peak[i], dd_to=full[i], biggest_loss=money[taken].min() if taken.any() else 0.0,
                 yearly=yearly, trades=int(taken.sum()))
 
 
@@ -53,14 +53,16 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--start", type=float, default=3000)
     ap.add_argument("--mc", type=int, default=1000)
+    ap.add_argument("--levels", default="", help="e.g. 6,8,10,12,15 (with brake); default = the standard set")
     a = ap.parse_args()
     h, m = A._load("hist"), A._load("mt5")
     t = pd.concat([h[h.entry_time < "2026-01-01"], m[m.entry_time >= "2026-01-01"]]).sort_values("entry_time")
     t = t.reset_index(drop=True)
     rows, yearly = [], {}
-    for label, risk, brake in [("1%", 1, True), ("2%", 2, True), ("3% (live)", 3, True), ("4%", 4, True),
-                               ("5%", 5, True), ("6%", 6, True), ("3%, no brake", 3, False),
-                               ("6%, no brake", 6, False)]:
+    levels = ([(f"{x}%", float(x), True) for x in a.levels.split(",")] if a.levels else
+              [("1%", 1, True), ("2%", 2, True), ("3% (live)", 3, True), ("4%", 4, True),
+               ("5%", 5, True), ("6%", 6, True), ("3%, no brake", 3, False), ("6%, no brake", 6, False)])
+    for label, risk, brake in levels:
         live = dict(A.LIVE)
         if not brake:
             live["risk_brake"] = []
