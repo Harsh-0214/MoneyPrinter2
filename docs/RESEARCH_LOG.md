@@ -388,3 +388,24 @@ brake (smaller trades while the account is below its peak) already handles bad s
 
 Drawdowns about 1 point shallower, returns about the same to 0.3 points a month lower in 2026.
 Built (`live.losing_streak.size_after`, fxbot/streaks.py), off. The streak alert is on.
+
+## Nov 14 2026 - Early exit when an open trade starts badly: rejected
+
+`run_early_exit.py`. At a fixed time after entry (London/USDJPY 30 min-4 h, gold 1-5 days,
+pullback 1-2 days), close the trade if it is below -0.5 / -0.25 / 0 / +0.25R. 104 rules on all 8
+strategies, 2021-23 + 2024-25 histdata and 2026 broker feed. None is better in all three periods;
+"close if not in profit after 1 h" costs 3-11R per period on GBPUSD and USDJPY.
+
+Why: at the check, winners and losers look alike. Share under water / median R:
+
+| strategy | check | eventual losers | eventual winners |
+|----------|-------|-----------------|------------------|
+| EURUSD London | 1 h | 80%, -0.12R | 44%, +0.01R |
+| GBPUSD London | 1 h | 65%, -0.12R | 42%, +0.04R |
+| USDJPY breakout | 1 h | 50%, -0.05R | 38%, +0.14R |
+| gold 55-day trend | 1 day | 60%, -0.03R | 14%, +0.28R |
+| GBP pullback | 1 day | 61%, -0.17R | 33%, +0.16R |
+
+Four in ten intraday winners are under water an hour in, and the early gap between the groups
+(about 0.1-0.2R) is smaller than normal price noise. On gold the losers are often in profit early
+and fail later, so an early check doesn't see them at all.
