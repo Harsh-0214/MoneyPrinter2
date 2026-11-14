@@ -94,6 +94,7 @@ What that means for a $50,000 account:
 | **Start the bots** | Double-click `start_bots.bat`. It opens MetaTrader and 4 windows, one per market. |
 | **Stop the bots** | Double-click `stop_bots.bat`. Open trades stay open (their stop losses still protect them). |
 | **See what each bot is thinking** | Look at its window. It explains itself in plain sentences ("waiting for...", "wants to BUY because..."). |
+| **See what MetaTrader is telling it** | Lines starting `MT5:` in each window: account, balance, equity and margin at startup; after every new candle, that candle's prices, the live bid/ask and spread, and each open bot trade with its stop and profit/loss. |
 | **See it on the charts** | In MetaTrader, the **FxbotOverlay** indicator draws the levels the bot is watching, trade entries, stop losses, targets and upcoming news. |
 | **See today's important events** | Open `logs/journal_<date>.log`. |
 | **Check how it's doing** | Run `python run_report.py`. It compares the real trades with what the tests expected. |
@@ -328,7 +329,7 @@ python -m venv venv
 venv\Scripts\activate
 pip install -r requirements.txt
 copy .env.example .env          # fill in MT5 login, password, server, terminal path
-python -m pytest -q             # 104 tests
+python -m pytest -q             # 107 tests
 python run_backtest.py --synthetic   # random data: should lose ~the spread
 ```
 
@@ -448,7 +449,7 @@ fxbot/
   strategies/  london_sweep.py  london_breakout.py  trend_follow.py (gold)  daily_patterns.py (pullback, USDJPY breakout)
                (+ opening_range, trend_pullback, key_levels, tiny_range_fade, weekend_gap,
                   london_close_reversal, ny_breakout, prev_day, mean_reversion: tested, unused)
-tests/                   104 unit tests
+tests/                   107 unit tests
 ```
 
 ## High-impact news filter (`fxbot/news.py`)

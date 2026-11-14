@@ -753,6 +753,8 @@ class StrategyRunner:
             self.fired_day = route_morning(self.morning, bar, day, lmin, broker, self.risk,
                                            self.fired_day, self.slot_limit)
             self.last_ts = bar.Index
+        if len(new):
+            self.last_bar = (new.index[-1], new.iloc[-1])     # newest closed candle (terminal MT5 line)
         if had_pos and broker.position() is None:
             _log_closed_trade(broker, self.log, who=self.label)
         before = self.last_status
@@ -850,6 +852,13 @@ def run(cfg, pair="EURUSD", dry_run=False, allow_live=False, sleeve=None):
             narrate.say("Ready. Account is in %s (1 %s = %s %s). Each trade risks about %s %s.",
                         acct.currency, symbol[3:6], f"{q2a:.2f}" if q2a >= 0.1 else f"{q2a:.4f}", acct.currency,
                         f"{risk_money:,.0f}", acct.currency)
+            from fxbot import mt5_info
+            mt5_labels = {r.unit["magic"]: r.label for r in runners}
+            try:                                    # what MetaTrader reports: account, symbol, positions
+                for line in mt5_info.startup_lines(mt5, symbol, mt5_labels):
+                    narrate.say("%s", line)
+            except Exception as e:
+                log.warning("MT5 info lines failed: %s", e)
             for r in runners:                       # what each strategy sees right now
                 for st in r.last_status.values():
                     if st:
@@ -891,6 +900,13 @@ def run(cfg, pair="EURUSD", dry_run=False, allow_live=False, sleeve=None):
                          datetime.now(timezone.utc).astimezone(LONDON).strftime("%H:%M"),
                          b.current_spread_pips(), ", ".join(open_now) or "none", b.equity())
                 # Terminal: what changed, or one short line for a quiet candle
+                if any(getattr(r, "new_bars", 0) for r in runners):
+                    try:                            # what MetaTrader just gave the bot
+                        for line in mt5_info.poll_lines(mt5, symbol, runners, mt5_labels, runners[0].pip,
+                                                        runners[0].cfg["costs"].get("spread_pips")):
+                            narrate.say("%s", line)
+                    except Exception as e:
+                        log.warning("MT5 info lines failed: %s", e)
                 changed = [_labelled(r.label, c) for r in runners for c in getattr(r, "changed", [])]
                 for c in changed:
                     narrate.say("%s", c)
