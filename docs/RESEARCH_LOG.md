@@ -409,3 +409,16 @@ Why: at the check, winners and losers look alike. Share under water / median R:
 Four in ten intraday winners are under water an hour in, and the early gap between the groups
 (about 0.1-0.2R) is smaller than normal price noise. On gold the losers are often in profit early
 and fail later, so an early check doesn't see them at all.
+
+## Nov 14 2026 - Entering on the dip after a breakout signal: rejected
+
+`run_dip_entry.py`. The signal becomes a limit order f x (stop distance) back towards the stop
+(f = 0.1 / 0.2 / 0.33 / 0.5), valid 1-4 h (gold 1-3 days); unfilled = skipped. Same stop, target
+and exits; 1% risk on the smaller stop. 48 settings on EURUSD / GBPUSD London, USDJPY, gold 55 and 20.
+
+- 3 of 48 settings beat the live entry in all three periods (2021-23, 2024-25, 2026): GBPUSD f 0.1
+  4 h (+4.3 / +1.0 / +1.3R) and gold 20-day f 0.1, 1 or 3 days (+0.4 / +2.1 / +0.9R). About 2 would
+  pass by luck in 48 tries, the gains are small and their neighbours don't agree. Not applied.
+- The signals that never dipped are the best trades: at the breakout price they made +16 to +72R
+  (by setting), so waiting for a dip mostly removes winners. EURUSD lost in 46 of 48 period-cells.
+- Half at the breakout and half on the dip lands between the two results, so it can't beat both.
