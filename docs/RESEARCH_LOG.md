@@ -356,3 +356,20 @@ years it was picked on (best 2021-25: +53.2R vs live +44.6R) and loses to the li
 every one of the four unseen years. All of the top 10 settings on 2021-25 made less than the live
 limits in 2026 (+4.9 to +9.7R vs +10.3R). Sweep: min reward/risk 1.25 or 1.5 with any max stop
 gives the same within 1.3R over 5 years (2 trades); 1.0 loses 6-9R. Nothing changed.
+
+## Nov 14 2026 - "Stop after 3 losses in a row": rejected
+
+`run_loss_streak.py`, every live trade 2021-2026, full portfolio replay (real margin, brake).
+Next trade after a streak: after a win +0.16 / +0.53R (2021-23 / 2024-26), after 2 losses +0.39 /
++0.47R, after 3+ losses +0.17 / +0.38R. Trades after a streak are still winners on average.
+
+| rule | trades skipped | R of the skipped trades | avg month 21-23 / 24-25 / 2026 (live 4.06 / 6.54 / 7.04) |
+|------|----------------|-------------------------|-----------------------------------------------------------|
+| per strategy, 3 losses, wait until a skipped trade would have won | 66 | +16.9 | 3.20 / 6.82 / 6.21 |
+| per strategy, 3 losses, skip next 2 | 58 | +15.3 | 3.97 / 6.40 / 6.13 |
+| per strategy, 4 losses, skip next 2 | 29 | +0.8 | 3.98 / 6.82 / 6.62 |
+| account, 3 losses, pause 1 day | 20 | +13.3 | 2.98 / 6.22 / 6.53 (2026 DD -11.1 vs -8.5) |
+| account, 3 losses, pause 7 days | 79 | +31.0 | 1.77 / 6.57 / 6.51 |
+
+Every version throws away profitable trades and none is better in all three periods. The risk
+brake (smaller trades while the account is below its peak) already handles bad stretches.
