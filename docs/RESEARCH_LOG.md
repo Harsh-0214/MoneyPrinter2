@@ -558,3 +558,32 @@ trades filled the risk cap and margin: only 49 of 261 live trades could be taken
 year to year (mostly opening-range breakouts) and add ~+0.04R a trade, too little to pay for crowding
 out the live strategies. Live units by condition: with the trend +0.26 to +0.62R a trade, against or
 flat about 0 to +0.17R (no condition is negative enough to switch a live strategy off).
+
+## Nov 15 2026 - ICT / "smart money" setups (the "every strategy" chart): 0 of 440 pass
+
+`fxbot/strategies/smc.py` (research only), `run_smc.py`. Eleven setups with strict definitions (file
+header): FVG retest, IFVG retest, order block, breaker block, OTE (62-79% retracement), Silver Bullet
+(first FVG in 03-04 / 10-11 / 14-15 New York), supply/demand base, swing S/R bounce, liquidity sweep +
+CHoCH, BOS continuation, Power of 3 around the New York midnight open. x EURUSD, GBPUSD, gold, USDJPY
+(histdata 2021-25) and NASDAQ 100 (Dukascopy 2021-26) x 5 / 15-min bars x trend filter on/off x target
+2R / 3R. Real costs, 1% risk. Already covered elsewhere: liquidity sweep + BOS on the Asian range (live
+London Sweep), CRT, 1-2-3 IFVG, breakouts, key-level S/R. "KRM" is not a standard term: not tested.
+
+| setup | median PF | best PF | profitable runs of 40 | trades/yr (median) | win % |
+|-------|-----------|---------|------------------------|--------------------|-------|
+| sweep + CHoCH | 0.83 | 0.96 | 0 | 405 | 36 |
+| Power of 3 (day open) | 0.80 | 0.95 | 0 | 75 | 44 |
+| BOS continuation | 0.77 | 1.02 | 2 | 362 | 36 |
+| Silver Bullet | 0.70 | 0.97 | 0 | 271 | 33 |
+| FVG retest | 0.70 | 0.88 | 0 | 498 | 31 |
+| order block | 0.65 | 0.77 | 0 | 493 | 30 |
+| breaker block | 0.64 | 0.78 | 0 | 250 | 31 |
+| OTE | 0.63 | 0.79 | 0 | 399 | 42 |
+| supply / demand | 0.61 | 0.79 | 0 | 66 | 31 |
+| S/R bounce | 0.56 | 1.04 | 1 | 126 | 30 |
+| IFVG retest | 0.54 | 0.73 | 0 | 509 | 29 |
+
+440 runs: 3 profitable over 2021-25 (best PF 1.04), none with PF >= 1.15, 0 pass. With zero costs the
+average trade is -0.10 to +0.10R on EURUSD and NASDAQ (15 min): no edge before costs, and these trade
+100-500 times a year, so costs turn it into a steady loss. 15-min bars lose less than 5-min (median PF
+0.72 vs 0.63); the trend filter makes no difference (0.67 vs 0.68).

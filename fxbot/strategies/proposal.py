@@ -43,6 +43,7 @@ TAG_PREFIXES = {
     "weekend_gap":     ("wgap_",),
     "fvg123":          ("fvg_",),
     "crt":             ("crt_",),
+    "smc":             ("smc_",),
 }
 _ALL = tuple(p for ps in TAG_PREFIXES.values() for p in ps)
 
