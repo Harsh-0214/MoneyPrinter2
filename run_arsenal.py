@@ -170,14 +170,10 @@ def _init(markets, spread_override=None):
     _SCALE.update({k: v / eur for k, v in _SCALE.items()})
 
 
-def _run(job):
-    from run_validate import summarize, per_year
-    from fxbot.backtest import run_backtest
-    name, sym = job
+def make_cfg(name, sym):
+    """Config for one strategy on one market (costs, instrument, pip-scaled specs)."""
     tf, slot, specs, limit = STRATS[name]
     path, pip, spread, min_units, _ = MARKETS[sym]
-    if (sym, tf) not in _BARS:
-        return None
     c = copy.deepcopy(BASE)
     c["smt"] = {}
     c["costs"]["spread_pips"] = spread
@@ -193,6 +189,36 @@ def _run(job):
     c["strategies"][slot] = [_scale_spec(s, _SCALE[sym]) for s in specs]
     c["slot_max_trades"] = limit
     c["strategy"] = {"daily_ema_period": 50}     # trend line for the filters
+    return c
+
+
+def run_trades(job):
+    """Every trade of one strategy on one market (for run_selector.py)."""
+    from fxbot.backtest import run_backtest
+    name, sym = job
+    tf = STRATS[name][0]
+    if (sym, tf) not in _BARS:
+        return None
+    c = make_cfg(name, sym)
+    c["risk"]["risk_per_trade_pct"] = 1.0
+    c["risk"]["max_leverage"] = 1000
+    t, _ = run_backtest(_BARS[(sym, tf)], c)
+    if not len(t):
+        return None
+    t = t[["entry_time", "exit_time", "side", "r_multiple", "exit_reason", "tag"]].copy()
+    t.insert(0, "market", sym)
+    t.insert(0, "strategy", name)
+    return t
+
+
+def _run(job):
+    from run_validate import summarize, per_year
+    from fxbot.backtest import run_backtest
+    name, sym = job
+    tf = STRATS[name][0]
+    if (sym, tf) not in _BARS:
+        return None
+    c = make_cfg(name, sym)
     se = c["account"]["starting_equity"]
     t, eq = run_backtest(_BARS[(sym, tf)], c)
     m = summarize(t, eq, se)

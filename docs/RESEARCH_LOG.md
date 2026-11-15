@@ -530,3 +530,31 @@ EURUSD, GBPUSD, gold, USDJPY (histdata 2021-25), NASDAQ 100 (Dukascopy 2021-26).
   it depends on which data feed is used, so it isn't real. 2026: 5 of 8 negative.
 - The bot already trades the one CRT form that works: the London Sweep (Asian range swept, close
   back inside, break of structure, target the other side).
+
+## Nov 15 2026 - Decision system choosing from the whole arsenal: rejected; CRT + 1-2-3 combined: rejected
+
+**CRT + 1-2-3 together** (`run_crt_fvg.py`: yesterday's range swept and closed back inside, entry on
+1/2/3-minute inversions, stop beyond the sweep, target the range's far end / 15-min gap): 30 runs on
+5 markets, all lose (PF 0.60-0.92, -42 to -219R over 2021-25, ~200 trades a year).
+
+**Decision system** (`make_arsenal_trades.py`, `run_selector.py`, `run_selector_replay.py`). 147,637
+trades: 48 arsenal strategies x 5 markets + the 8 live units. Conditions before each trade: volatility
+(calm / normal / wild) and trend (with / flat / against the trade). Each year 2022-25 decided only from
+earlier years: a strategy-market is used only in conditions where it had >= 20 trades, >= +0.05R and
+t >= 1.0 before.
+
+| R per unseen year (1% risk, summed) | 2022 | 2023 | 2024 | 2025 | total | trades/yr |
+|---|---|---|---|---|---|---|
+| live bot as it is | +23.7 | +23.5 | +34.0 | +67.7 | +148.9 | 127 |
+| live bot + decision-system picks | +19.5 | +53.2 | +19.6 | +95.8 | +188.1 | 392 |
+| decision system alone (whole arsenal) | -4.2 | +29.6 | -12.1 | +29.3 | +42.6 | 268 |
+| 12-month-form selector | +90.5 | -69.0 | -131.1 | -59.2 | -168.8 | 2,468 |
+| everything, no selection | -3,442 | -4,058 | -5,098 | -2,836 | -15,432 | 29,163 |
+
+Summed R flatters it. On one account with the live limits (4% risk, 12% cap, 70% margin, brake):
+live bot 4.63% / 7.03% avg month (2022-23 / 2024-25), max DD -17.7 / -20.6%, $3,000 from 2022 ->
+$45,400; with the picks 6.21% / -2.73%, DD -19.3 / -25.5%, $3,000 -> $10,600. In 2024-25 the extra
+trades filled the risk cap and margin: only 49 of 261 live trades could be taken. The picks change from
+year to year (mostly opening-range breakouts) and add ~+0.04R a trade, too little to pay for crowding
+out the live strategies. Live units by condition: with the trend +0.26 to +0.62R a trade, against or
+flat about 0 to +0.17R (no condition is negative enough to switch a live strategy off).
