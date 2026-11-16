@@ -347,7 +347,9 @@ def stalled(last_bar_start, timeframe, now_utc):
     if reopen > now:
         reopen -= pd.Timedelta(days=1)
     if now.weekday() == 0 or (now.weekday() == 6):
-        reopen = max(reopen, now.normalize() - pd.Timedelta(days=now.weekday() == 0) + pd.Timedelta(hours=22))
+        # Sunday 22:00 UTC reopen (on Monday that was yesterday). int(): pandas 3 rejects a bool here,
+        # which crashed every bot's loop from Sunday 23:00 UTC through Monday (fixed Nov 15 2026).
+        reopen = max(reopen, now.normalize() - pd.Timedelta(days=int(now.weekday() == 0)) + pd.Timedelta(hours=22))
     if now - reopen < allowed + tf:
         return False
     return now - (pd.Timestamp(last_bar_start) + tf) > allowed

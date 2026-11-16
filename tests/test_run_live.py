@@ -157,6 +157,13 @@ def test_stall_watchdog_respects_market_hours():
     assert run_live.stalled(pd.Timestamp("2026-11-13 20:55", tz="UTC"), "5min", sun_open) is False
     daily = pd.Timestamp("2026-11-11 23:05", tz="UTC")            # just after the daily break
     assert run_live.stalled(pd.Timestamp("2026-11-11 20:55", tz="UTC"), "5min", daily) is False
+    # Sunday night after the reopen and all of Monday used to crash (bool passed to pd.Timedelta)
+    sun_late = pd.Timestamp("2026-11-15 23:05", tz="UTC")
+    assert run_live.stalled(pd.Timestamp("2026-11-13 20:55", tz="UTC"), "1h", sun_late) is False   # old bar, just reopened
+    mon = pd.Timestamp("2026-11-16 09:00", tz="UTC")
+    assert run_live.stalled(mon - pd.Timedelta(minutes=10), "5min", mon) is False
+    assert run_live.stalled(mon - pd.Timedelta(minutes=60), "5min", mon) is True
+    assert run_live.stalled(mon - pd.Timedelta(hours=2), "1h", mon) is False
 
 
 def test_build_morning_uses_strategy_stack():
