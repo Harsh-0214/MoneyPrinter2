@@ -334,10 +334,12 @@ class LondonBreakout:
             msg = f"skip day ({self.skip_today}s are skipped by config) - watching only"
         elif self.trades_today >= self.max_trades:
             msg = "traded today - done"
+        elif local_min is not None and local_min < self.range_end:
+            # still overnight: the range is not final, so don't call the day yet
+            need = "" if self.min_range <= width <= self.max_range else f" (needs {self.min_range}-{self.max_range}p by 08:00)"
+            msg = f"range so far {width:.0f}p{need}"
         elif not (self.min_range <= width <= self.max_range):
             msg = f"range {width:.0f}p outside {self.min_range}-{self.max_range}p -> no breakout today"
-        elif local_min is not None and local_min < self.range_end:
-            msg = f"range so far {width:.0f}p"
         elif self._deferred_side == 0:
             msg = f"range {width:.0f}p ok, no close outside it yet"
         else:
