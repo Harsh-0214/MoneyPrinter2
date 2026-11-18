@@ -105,6 +105,7 @@ What that means for a $50,000 account:
 | **See it on the charts** | In MetaTrader, the **FxbotOverlay** indicator draws the levels the bot is watching, trade entries, stop losses, targets and upcoming news. |
 | **See today's important events** | Open `logs/journal_<date>.log`. |
 | **Check how it's doing** | Run `python run_report.py`. It compares the real trades with what the tests expected. |
+| **Weekly check (automatic)** | Every Saturday 08:00 (Task Scheduler "MoneyPrinter2 fidelity") `run_fidelity.py` re-runs the backtest over the past week and sends Telegram a trade-by-trade MATCH / MISMATCH list. All MATCH = the bots are doing what was tested, whatever the P/L. |
 
 The "boing" sound in MetaTrader means a trade was opened, changed or closed.
 
@@ -370,6 +371,7 @@ stop_bots.bat                                  # stop the bots (positions are le
 python run_live.py --pair XAUUSD --dry-run     # one bot, log only
 python run_live.py --pair GBPUSD --sleeve pullback   # just one of a market's strategies (testing)
 python run_report.py                           # demo results vs backtest expectations
+python run_fidelity.py --days 7 [--telegram]   # each live trade vs the backtest on the same candles
 ```
 - Each market bot runs all of its strategies in one loop, exactly like the backtest
   (`route_morning`). Each strategy uses its own bar timeframe (5 min or 1 h).
@@ -445,6 +447,7 @@ run_live.py              live/demo runner (one bot per market, runs all its stra
 setup_telegram.py        one-time Telegram setup for phone notifications (fxbot/notify.py)
 telegram_control.py      phone commands: /status /startbots /stopbots /restart (started by start_bots.bat)
 run_report.py            demo results vs backtest expectations
+run_fidelity.py          weekly live-vs-backtest trade-by-trade check (run_fidelity_weekly.bat)
 start_bots.bat / run_forever.bat / stop_bots.bat   24/7 launchers
 mt5/FxbotOverlay.mq5     MT5 chart indicator (draws what the bot sees)
 docs/MoneyPrinter2_Guide.pdf   how everything works
