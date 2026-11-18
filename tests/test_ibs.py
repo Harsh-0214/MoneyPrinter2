@@ -111,3 +111,21 @@ def test_config_unit_exists_and_backtests():
     cfg = yaml.safe_load(open("config.yaml"))
     u = [x for x in expand_units(cfg) if x["key"] == "SPX500"]
     assert u and u[0]["magic"] == 12349 and u[0]["strategies"]["morning"][0]["name"] == "ibs"
+
+
+def test_fractional_index_sizing_keeps_0_1_lot_steps():
+    """Nov 18 2026: $1-a-point index contracts sized in whole units rounded 1.5 -> 1 (or 0)."""
+    from fxbot.risk import RiskManager, units_floor
+    cfg = yaml.safe_load(open("config.yaml"))["risk"]
+    r = RiskManager(dict(cfg, news_filter=False, risk_per_trade_pct=2.0, min_units=0.1, max_leverage=100), 0.1)
+    u = r.position_size(50000, 7400.0, 7400.0 - 450.0)        # 1000 / 450 = 2.22 contracts
+    assert abs(u - 2.2) < 1e-9 and isinstance(u, float)
+    fx = RiskManager(dict(cfg, news_filter=False, min_units=1000), 0.0001)
+    assert isinstance(fx.position_size(50000, 1.1, 1.09), int)  # FX stays whole units
+    assert units_floor(13999.7, 1000) == 13000 and units_floor(2.96, 0.1) == 2.9
+
+
+def test_mt5_units_from_volume():
+    from fxbot.brokers.mt5_broker import _units
+    assert _units(0.13 * 100000) == 13000 and isinstance(_units(0.13 * 100000), int)
+    assert _units(2.9 * 1.0) == 2.9

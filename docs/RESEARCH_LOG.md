@@ -713,3 +713,34 @@ In the actual 2021-26 order the account path is sensitive (B: 5.88 / 6.70 / 12.6
 11.80%: one period lower from which trades fit the margin / risk caps), so the reshuffles are the fair
 comparison: +0.2% a month for a raw account, -0.4% a month if fills are 0.5 pip worse than the demo.
 Smaller than lower gold margin (10% instead of 22%: +0.4 / +1.0 / +1.2% a month, same drawdowns).
+
+## Nov 18 2026 (later) - SPX500 IBS to the demo; fractional index lots; more IBS indices, shelved ideas, round 4
+
+**SPX500 IBS live on the demo at 2%** (`start_bots.bat` now starts it). Found while testing more
+indices: index CFDs are $1 a point per contract and the bot sized in whole contracts, so a 1.5-
+contract trade became 1 (and NAS100 / US30 trades with ~1,000-point stops became 0: skipped). The
+broker allows 0.1 lots: `instrument.min_units: 0.1` now keeps fractional sizes (risk.units_floor,
+mt5_broker._units, MarginGuard); FX and gold (whole minimums) are unchanged. Re-run with exact
+sizing (`run_ibs_portfolio.py`): SPX500 at 2% avg month 5.05 / 7.03 / 11.80 -> 5.94 / 7.15 / 11.79,
+max DD -17.7 / -20.6 / -12.7 -> -19.3 / -20.6 / -14.2; reshuffled typical 5.28 -> 5.42, unlucky
+4.32 -> 4.40, 1-in-100 DD -23.4 -> -23.4. 2026 is now flat: a marginal addition; the demo decides.
+
+**More IBS indices** (`run_ibs_indices.py`, same rules on NAS100 / US30, 0.1-lot sizing): alone
+weaker (+0.059 / +0.045R a trade vs SPX500 +0.073R) and correlated with SPX500 (0.43-0.53 monthly).
+Every combination is worse than SPX500 alone in the reshuffles (typical month 4.87-5.34 vs 5.45).
+Rejected.
+
+**Shelved near-misses vs today's account** (`run_candidates.py`, baseline live + SPX500 2%: 5.94 /
+7.15 / 11.79, reshuffled 5.43): gold 10/5 sleeve 4.68 / 7.80 / 11.89 (reshuffled 5.74) - 2021-23
+down (gold margin crowding); China A50 trend 5.96 / 6.86 / 11.54; UK oil trend 5.66 / 7.33 / 13.90
+(reshuffled 5.59; 22 trades in 6 years, 2026 carries it); all three 4.82 / 7.31 / 13.47. None pass.
+
+**Round 4** (`run_round4.py`; 1 of 18 "passes", not real):
+- S&P 500 -> FX lead-lag (big SPX day -> AUDJPY / USDJPY / AUDUSD next day): loses 2000-20 in
+  every version (PF 0.72-0.91).
+- London 4 pm fix reversal (EUR / GBP / JPY, fade 15:30-16:00 into 16:30 / 17:00): PF 0.61-0.80.
+- Turnaround Tuesday (buy a down Monday's close, sell Tuesday): strong 2000-20 on all three US
+  indices (PF 1.48-2.01) but decayed since (2021-25 SPX500 1.00-1.34, US30 0.65-1.24); the lone
+  pass (NAS100, Monday down > 0.5%) is 1 of 6 and is the same weak-close idea IBS already trades.
+- Not testable on this account: VIX ETFs and every ETF CFD are trade mode "disabled"; no crypto,
+  no bond CFDs.

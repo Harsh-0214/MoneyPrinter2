@@ -381,7 +381,8 @@ pairs:
       news_currencies: [USD]
     instrument:
       pip: 0.1
-      min_units: 1               # units = contracts ($1 a point each)
+      min_units: 0.1             # units = contracts ($1 a point each); the broker allows 0.1 lot steps.
+                                 #   Whole units would round a 1.5-contract trade to 1 (or 0 when markets are wild)
     data:
       path: data/mt5/SPX500_H1.csv   # broker H1 (python fetch_mt5_h1.py); complete from mid-2018
       source_tz: "UTC"

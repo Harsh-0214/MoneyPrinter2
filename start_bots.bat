@@ -5,6 +5,7 @@ rem one has a setup:
 rem   EURUSD / GBPUSD : London Sweep + Breakout (5 min) and daily swing pullback (1 h)
 rem   XAUUSD          : gold trend 55-day and 20-day (1 h)
 rem   USDJPY          : volatility breakout (15 min)
+rem   SPX500          : S&P 500 IBS mean reversion (1 h), demo from Nov 18 2026
 rem Can run automatically at Windows login (Task Scheduler task "MoneyPrinter2 bots").
 cd /d "%~dp0"
 
@@ -21,7 +22,7 @@ rem Phone control (Telegram /status /startbots /stopbots /restart); exits at onc
 rem running or if Telegram isn't set up. It keeps running when the bots are stopped.
 start "fxbot phone control" /min "%~dp0venv\Scripts\python.exe" "%~dp0telegram_control.py"
 
-for %%B in (EURUSD GBPUSD XAUUSD USDJPY) do (
+for %%B in (EURUSD GBPUSD XAUUSD USDJPY SPX500) do (
     start "fxbot %%B" cmd /k ""%~dp0run_forever.bat" %%B"
     "%SystemRoot%\System32\timeout.exe" /t 3 /nobreak >nul
 )

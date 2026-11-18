@@ -17,12 +17,22 @@ def resolve_news_currencies(setting, symbol):
     return [str(c).upper() for c in setting]
 
 
+def units_floor(units, step):
+    """Round a size down to a multiple of `step`: an int for whole steps (FX, gold), else a float
+    rounded to 6 decimals (e.g. 2.9 index contracts with a 0.1 step)."""
+    n = int(units // step + 1e-9)
+    return int(n * step) if float(step).is_integer() else round(n * step, 6)
+
+
 class RiskManager:
     def __init__(self, cfg, pip, symbol=None):
         self.risk_pct = float(cfg["risk_per_trade_pct"])
         self.max_daily_loss_pct = float(cfg["max_daily_loss_pct"])
         self.max_leverage = float(cfg["max_leverage"])
-        self.min_units = int(cfg["min_units"])
+        mu = float(cfg["min_units"])
+        # whole units for FX / gold (unchanged); a fractional minimum (index CFDs: 0.1 lot of
+        # $1-a-point contracts) keeps fractional sizes, or big indices would round to 0 lots
+        self.min_units = int(mu) if mu.is_integer() else mu
         # Skip trades whose stop is closer than this many spreads (0 = off): such stops
         # get knocked out by noise and pay the spread as a big share of the risk.
         self.min_stop_spreads = float(cfg.get("min_stop_spreads", 0) or 0)
@@ -148,7 +158,7 @@ class RiskManager:
         fx = self.quote_to_account if self.quote_to_account > 0 else 1.0
         units = equity * self.risk_pct / 100 / (dist * fx)
         units = min(units, equity * self.max_leverage / (entry_price * fx))   # leverage cap
-        out = int(units // self.min_units * self.min_units)
+        out = units_floor(units, self.min_units)
         if out <= 0:
             self.skip_note = ("size", f"risking {self.risk_pct:g}% of {equity:,.2f} with a {dist / self.pip:.1f}-pip "
                                       f"stop gives {units:,.0f} units, less than the minimum {self.min_units:,}")

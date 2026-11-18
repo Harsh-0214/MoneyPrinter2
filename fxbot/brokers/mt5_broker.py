@@ -23,6 +23,13 @@ from ..data import server_ts_to_utc
 PIP = 0.0001  # EUR/USD
 
 
+
+def _units(x):
+    """Lots x contract size -> units: whole for FX / gold (13000.000000002 -> 13000), fractional for
+    0.1 lots of a $1-a-point index (2.9 stays 2.9)."""
+    r = round(x)
+    return int(r) if abs(x - r) < 1e-6 else round(x, 6)
+
 class MT5Broker(Broker):
     def __init__(self, cfg: dict, logger, allow_live: bool = False):
         if mt5 is None:
@@ -90,7 +97,7 @@ class MT5Broker(Broker):
             side = 1 if p.type == mt5.ORDER_TYPE_BUY else -1
             return Position(
                 side=side,
-                units=round(p.volume * self._contract()),
+                units=_units(p.volume * self._contract()),
                 entry_price=p.price_open,
                 # MT5 position times are server time encoded as epoch -> real UTC
                 entry_time=server_ts_to_utc([p.time])[0],
@@ -303,7 +310,7 @@ class MT5Broker(Broker):
 
             exit_deal = exits[-1]
             side = 1 if entry.type == mt5.DEAL_TYPE_BUY else -1
-            units = round(entry.volume * self._contract())
+            units = _units(entry.volume * self._contract())
             total_commission = sum(d.commission for d in ds)
             total_pnl = sum(d.profit for d in ds) + total_commission
 

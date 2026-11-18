@@ -65,7 +65,7 @@ class DryRunBroker:
         return self._b.current_spread_pips()
 
     def submit(self, order):
-        log.info("DRY RUN: would submit %s %d units SL=%.5f TP=%s tag=%s",
+        log.info("DRY RUN: would submit %s %s units SL=%.5f TP=%s tag=%s",
                  "BUY" if order.side == 1 else "SELL",
                  order.units, order.stop_loss,
                  f"{order.take_profit:.5f}" if order.take_profit else "None", order.tag)
@@ -202,8 +202,8 @@ class MarginGuard:
             narrate.say("%s skipped a trade: not enough margin left (other trades are open).", self.who)
             return False
         old = order.units
-        order.units = int(order.units * f)
-        log.warning("[%s] MARGIN: trade shrunk %d -> %d units to keep margin use under %.0f%%",
+        order.units = int(order.units * f) if isinstance(order.units, int) else round(int(order.units * f * 10) / 10, 6)
+        log.warning("[%s] MARGIN: trade shrunk %s -> %s units to keep margin use under %.0f%%",
                     self.who, old, order.units, self._max * 100)
         return self._b.submit(order)
 
@@ -503,7 +503,7 @@ def _log_closed_trade(broker, logger=None, who=None):
             narrate.say("%s trade closed (details are in MT5's History tab).", who)
         return
     t = max(trades, key=lambda x: x.exit_time)          # the most recent close
-    (logger or log).info("CLOSED %s %s %d units: entry %.5f -> exit %.5f  P/L %.2f  reason=%s",
+    (logger or log).info("CLOSED %s %s %s units: entry %.5f -> exit %.5f  P/L %.2f  reason=%s",
              t.tag, "BUY" if t.side == 1 else "SELL", t.units, t.entry_price,
              t.exit_price, t.pnl, t.exit_reason)
     if who:
