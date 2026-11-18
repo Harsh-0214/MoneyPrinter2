@@ -52,4 +52,4 @@ for name, fn in V.items():
     rows.append(row); print(name, "done", flush=True)
 pd.set_option("display.width", 300); pd.set_option("display.max_columns", 50)
 out = pd.DataFrame(rows).set_index("variant"); print(out.T.to_string())
-out.to_csv(sys.argv[1].replace("feat_both", "fakeout_sim_results"))
+out.to_csv("results/fakeout_sim_results.csv")
