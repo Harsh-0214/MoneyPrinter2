@@ -672,3 +672,24 @@ avg month 4.19 -> 4.92 / 5.02 (2021-23), 7.89 -> 8.89 / 8.98 (2024-25), 7.00 -> 
 max DD -13.7 -> -17.1 / -13.1, -15.4 -> -12.9 / -14.0, -8.3 -> -7.9 / -10.0 (SPX / NAS).
 Not live: next step is a proper unit (16:00 NY decision on the broker feed, catastrophic stop,
 margin in run_portfolio.py) and a dry-run on the demo.
+
+### Nov 18 2026 - S&P 500 IBS built as a unit (magic 12349), whole-account tested, dry run started
+
+`fxbot/strategies/ibs.py`, config `SPX500`, `run_ibs_portfolio.py`, `tests/test_ibs.py`.
+- Matches the research version on the same broker H1 data (no stop: 231 vs 238 trades, sum of
+  moves +111.0% vs +110.4%; the difference is same-day exit + re-entry, now "keep holding").
+- Catastrophic stop, x 20-day average day range: 1.5x PF 1.22 (2021-25) / 2x 1.29 / 2.5x 1.39 /
+  **3x 1.64, 5/5 years, 2026 1.74** / 4x 1.58. Any stop costs a little vs none; 3x kept.
+- Whole account (fixed calendar months; real 10% margin, 12% risk cap, brake), avg month / max DD:
+
+| SPX500 risk | 2021-23 | 2024-25 | 2026 | reshuffled 2021-25 median / p10 / 1-in-100 DD |
+|---|---|---|---|---|
+| 0 (today) | 5.05 / -17.7 | 7.03 / -20.6 | 11.79 / -12.7 | 5.31 / 4.35 / -23.4 |
+| **2%** | **5.95 / -19.5** | **7.10 / -20.6** | **11.88 / -14.2** | **5.47 / 4.49 / -23.0** |
+| 3% | 6.08 / -19.9 | 7.20 / -20.6 | 11.50 / -14.6 | 5.60 / 4.57 / -22.8 |
+
+  2% passes the portfolio rule (all three periods up, DD within 2 points), narrowly; 3% lowers
+  2026. The unit makes money alone in every period (+7.5R / +4.8R / +2.5R); with the 12% open-
+  risk cap it blocks ~10 other trades in 2021-23. A modest diversifier, not a big boost.
+- Dry run on the demo from Nov 18 (`run_spx_dryrun.bat`): live 16:00 NY values match the research
+  calculation (Nov 17 IBS 0.37). Decide after ~15 signals whether to trade it on the demo.

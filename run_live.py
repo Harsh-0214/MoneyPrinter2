@@ -946,12 +946,14 @@ def run(cfg, pair="EURUSD", dry_run=False, allow_live=False, sleeve=None):
             for r in runners:
                 r.connect(mt5)
             acct = mt5.account_info()
+            si = mt5.symbol_info(symbol)
+            quote = getattr(si, "currency_profit", None) or symbol[3:6]     # SPX500 -> USD, not "500"
             log.info("Account currency %s: 1 %s move per unit = %.4f %s (sizing uses this)",
-                     acct.currency, symbol[3:6], runners[0].risk.quote_to_account, acct.currency)
+                     acct.currency, quote, runners[0].risk.quote_to_account, acct.currency)
             risk_money = float(runners[0].cfg["risk"]["risk_per_trade_pct"]) / 100 * float(cap or acct.equity)
             q2a = runners[0].risk.quote_to_account
             narrate.say("Ready. Account is in %s (1 %s = %s %s). Each trade risks about %s %s.",
-                        acct.currency, symbol[3:6], f"{q2a:.2f}" if q2a >= 0.1 else f"{q2a:.4f}", acct.currency,
+                        acct.currency, quote, f"{q2a:.2f}" if q2a >= 0.1 else f"{q2a:.4f}", acct.currency,
                         f"{risk_money:,.0f}", acct.currency)
             from fxbot import mt5_info
             mt5_labels = {r.unit["magic"]: r.label for r in runners}
