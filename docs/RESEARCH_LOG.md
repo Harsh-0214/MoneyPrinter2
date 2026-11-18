@@ -587,3 +587,42 @@ London Sweep), CRT, 1-2-3 IFVG, breakouts, key-level S/R. "KRM" is not a standar
 average trade is -0.10 to +0.10R on EURUSD and NASDAQ (15 min): no edge before costs, and these trade
 100-500 times a year, so costs turn it into a steady loss. 15-min bars lose less than 5-min (median PF
 0.72 vs 0.63); the trend filter makes no difference (0.67 vs 0.68).
+
+## Nov 17 2026 - USDJPY false breakouts, fading / reversing, where losses come from
+
+Trigger: Nov 17 USDJPY breakout sell stopped out (-1.01R, -1,290 CAD; the backtest has the same trade).
+
+**False-breakout filters** (`run_fakeout_sim.py`, whole-account replay, all bots at live settings).
+Two candle features separate false breakouts in both 2021-23 and 2024-26: a weak close (<= 77% toward
+the candle's extreme) and closing far past the level (> 0.114x yesterday's range). Time of entry and
+yesterday's range: noise. Avg month 2021-23 / 2024-25 / 2026:
+
+| USDJPY rule | 2021-23 | 2024-25 | 2026 | max DD 2026 |
+|-------------|---------|---------|------|-------------|
+| live (no filter) | 4.90 | 7.03 | 12.08 | -12.7 |
+| skip weak OR far | 3.57 | 7.40 | 10.21 | -7.0 |
+| trend filter back on | 2.83 | 6.30 | 7.30 | -8.9 |
+| H: counter-trend only if strong | 3.82 | 7.79 | 11.98 | -7.0 |
+
+H picked from 8 variants on the same trades, so not adopted: running WATCH-ONLY (`shadow_rule_h`),
+judged on fresh trades via run_report.py. Trend filter back on: clearly worse.
+
+**Fade / reverse** (`run_reverse.py`, USDJPY, R per period 2021-23 / 2024-25 / 2026):
+- live breakout: +37.4 / +9.7 / +21.8R
+- fade every breakout (trade the opposite way): -12.2 / -16.9 / -9.8R. Rejected: the breakout has
+  the edge, so doing the opposite loses in every period.
+- reverse after a full stop-out (extra trade, same stop, BE at +1R, out 21:00; simple bar walk, not
+  the backtester): +10.9 / -3.1 / +4.1R over 68 trades (avg ~+0.18R). One period negative, crude
+  model: not adopted. Nov 17 would have made ~+0.4R.
+
+**Tighter stops**: see Nov 2026 stop-distance test (results/stop_size.csv). At fixed % risk a closer
+stop does not shrink the loss per losing trade (the position grows to keep the risk), it makes stops
+hit more often. USDJPY 0.4x range is slightly better in R alone but not in the portfolio (the 14x
+leverage cap already shrinks most USDJPY trades); London tight stops lose heavily. Nov 17: any stop
+under ~53 pips would have been hit; at 0.4x (22 pips) it is hit at 10:00 London for the same -1R.
+
+**Where losses come from** (whole-account replay 2021 - Nov 2026): 24 losing months of 70; USDJPY or
+GBPUSD was the biggest loser in 17 of them. Share of all money lost: USDJPY 40%, GBPUSD 25%, GBPUSD
+pullback 17%, gold units 12%, EURUSD 6%. Most losing trades are full stop-outs (USDJPY 54 of 64,
+GBPUSD 52 of 80). Every unit is positive in every period; thinnest: GBPUSD pullback +0.09 / +0.15 /
++0.03R per trade (watch it: small cost changes could erase it). Longest losing run, whole account: 5.
