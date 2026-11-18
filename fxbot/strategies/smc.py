@@ -53,6 +53,9 @@ class SMC:
         self.zone_bars = int(cfg.get("zone_bars", 96))
         self.max_per_day = int(cfg.get("max_per_day", 2))
         self.exit_min = 21 * 60
+        # hold_overnight (Nov 18 2026, for 1 h / 4 h gaps): no 21:00 exit, entries any hour;
+        # the trade ends only at its stop or target
+        self.hold = bool(cfg.get("hold_overnight", False))
         self.b = []                     # bars: (t, o, h, l, c)
         self.atr = None
         self._rng = []
@@ -312,12 +315,12 @@ class SMC:
         zone_sig = self._zone_entry(bar) if self.atr is not None else None
         pos = broker.position()
         if pos is not None:
-            if manages(pos, self.NAME) and local_min >= self.exit_min:
+            if manages(pos, self.NAME) and local_min >= self.exit_min and not self.hold:
                 broker.close_position("session_exit")
             return None
-        if self.n_today >= self.max_per_day or local_min >= self.exit_min - 30:
+        if self.n_today >= self.max_per_day or (local_min >= self.exit_min - 30 and not self.hold):
             return None
-        if self.setup != "silver" and not (7 * 60 <= local_min < 20 * 60):
+        if self.setup != "silver" and not self.hold and not (7 * 60 <= local_min < 20 * 60):
             return None
         if sig is None and zone_sig is not None:
             sig = zone_sig[:3]

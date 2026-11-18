@@ -626,3 +626,18 @@ GBPUSD was the biggest loser in 17 of them. Share of all money lost: USDJPY 40%,
 pullback 17%, gold units 12%, EURUSD 6%. Most losing trades are full stop-outs (USDJPY 54 of 64,
 GBPUSD 52 of 80). Every unit is positive in every period; thinnest: GBPUSD pullback +0.09 / +0.15 /
 +0.03R per trade (watch it: small cost changes could erase it). Longest losing run, whole account: 5.
+
+## Nov 18 2026 - New strategy families + the FVG angles not yet tried: 0 pass
+
+Pass rules fixed before each run (as always): PF >= 1.15 over 2021-25, >= 4 of 5 years up, 2026 not
+negative; a lone pass is re-checked on data it never saw.
+
+| Idea (why it could work) | Script | Result |
+|---|---|---|
+| **FVG on 1 h / 4 h** candles (fvg + ifvg, trend on/off, 2R/3R, intraday or held to stop/target; 5 markets) | `run_htf_fvg.py` | 1 of 160 pass (gold 4 h, trend, 3R, held: PF 1.18). On the broker's gold feed: 2006-20 PF 0.84 / -22R, 2021-25 PF 1.13 and 2/4 years up -> feed-dependent, rejected. Median PF 0.73-0.94 |
+| **FVG as confluence** on live breakouts (signal candle leaves a gap) | `run_fvg_confluence.py` | Not better: USDJPY gap breakouts +0.17 / -0.14R vs +0.72 / +0.22R without (2021-23 / 2024-25); London gap trades rare and mixed |
+| **Gotobi** (Japanese importers buy USD into the 09:55 Tokyo fix on the 5th/10th/...) | `run_gotobi.py` | Buying into the fix: gotobi days no better than ordinary days (00:00 entry: -1.3 pips gross). "Buy 22:00 UTC" is the rollover-spread artifact (same on ordinary days; ~0 on the broker's 2026 feed). Sell after the fix: PF 1.26 but 3/5 years, 2026 -4.2 pips a trade |
+| **Currency momentum** (buy the 2-3 strongest of 9 currencies vs USD, sell the weakest; 1-12 month lookback; monthly; broker daily data 1993-2026) | `run_fx_momentum.py` | All 8 versions lose over 30 years even with no financing cost (Sharpe -0.38 to -0.01). Consistent with the literature: G10 FX momentum faded after ~2000 |
+| **Intraday momentum** NAS100 (first half hour predicts the last; Gao et al. 2018) | `run_intraday_momentum.py` | No gross edge (-0.85 to +1.2 points a trade on ~20,000); PF 0.67-0.91 after costs, 2026 negative |
+
+Research-only change: `fxbot/strategies/smc.py` gains `hold_overnight` (default off).
