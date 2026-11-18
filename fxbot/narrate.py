@@ -63,8 +63,8 @@ class NarratingBroker:
     unchanged: every call is passed straight through to the real broker."""
 
     def __init__(self, broker, who, symbol, pip, contract, risk_money, currency="CAD",
-                 open_risk_fn=None, risk_cap=None):
-        self._b = broker
+                 open_risk_fn=None, risk_cap=None, mt5=None):
+        self._b, self._mt5 = broker, mt5
         self.who, self.symbol, self.pip, self.contract = who, symbol, pip, contract
         self.risk_money, self.currency = risk_money, currency      # e.g. 500 CAD per trade
         self.open_risk_fn, self.risk_cap = open_risk_fn, risk_cap
@@ -82,14 +82,38 @@ class NarratingBroker:
                     f"{used:,.0f}", self.currency, cap)
             except Exception:
                 pass
+        ok = self._b.submit(order)    # inner guards may shrink order.units before it is sent
         lots = order.units / self.contract if self.contract else order.units
         target = f"target {order.take_profit:g}" if order.take_profit else "no fixed target"
-        say("Trade size: risking ~%s %s -> %.2f lots. Stop %g, %s.",
-            f"{self.risk_money:,.0f}", self.currency, lots, order.stop_loss, target)
-        ok = self._b.submit(order)
+        actual = self._stop_loss_money(order, lots)
+        if actual is None:
+            say("Trade size: risking ~%s %s -> %.2f lots. Stop %g, %s.",
+                f"{self.risk_money:,.0f}", self.currency, lots, order.stop_loss, target)
+        else:
+            capped = (f" (planned {self.risk_money:,.0f}; cut down by the leverage/margin caps)"
+                      if actual < 0.9 * self.risk_money else "")
+            say("Trade size: %.2f lots, loses ~%s %s if the stop is hit%s. Stop %g, %s.",
+                lots, f"{actual:,.0f}", self.currency, capped, order.stop_loss, target)
         say("Order sent: %s %.2f lots %s. %s", side, lots, name,
             "Filled." if ok else "NOT sent/filled (see the log file for the reason).")
         return ok
+
+    def _stop_loss_money(self, order, lots):
+        """What hitting the stop would cost in account currency, per MT5's own calculator."""
+        mt5 = self._mt5
+        if mt5 is None or lots <= 0:
+            return None
+        try:
+            tick = mt5.symbol_info_tick(self.symbol)
+            if tick is None:
+                return None
+            buy = order.side == 1
+            price = tick.ask if buy else tick.bid
+            typ = mt5.ORDER_TYPE_BUY if buy else mt5.ORDER_TYPE_SELL
+            p = mt5.order_calc_profit(typ, self.symbol, lots, price, order.stop_loss)
+            return abs(p) if p is not None else None
+        except Exception:
+            return None
 
     def update_stop(self, new_stop_price, take_profit=None):
         pos = self._b.position()

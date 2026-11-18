@@ -40,3 +40,19 @@ def test_closed_trade_line(caplog):
     with caplog.at_level(logging.INFO, logger="fxbot.narrate"):
         narrate.closed_trade("London", t)
     assert "London trade closed: +125.99 CAD, it hit its target." in caplog.records[-1].getMessage()
+
+
+def test_trade_size_shows_real_stop_loss_not_planned_risk(caplog):
+    """Nov 17 2026: USDJPY 4.97 lots said 'risking ~2,032' but the stop cost 1,290 (leverage cap)."""
+    class _MT5:
+        ORDER_TYPE_BUY, ORDER_TYPE_SELL = 0, 1
+        def symbol_info_tick(self, s): return SimpleNamespace(bid=158.929, ask=158.942)
+        def order_calc_profit(self, typ, s, lots, price, close):
+            return (price - close) * lots * 100000 / close * 1.4   # SELL: JPY -> USD -> CAD
+    b = _Broker()
+    nb = narrate.NarratingBroker(b, "Breakout", "USDJPY", 0.01, 100000, 2032, mt5=_MT5())
+    with caplog.at_level(logging.INFO, logger="fxbot.narrate"):
+        nb.submit(Order(-1, 497000, 159.2155, None, "vbo_short"))
+    text = "\n".join(r.getMessage() for r in caplog.records)
+    assert "4.97 lots, loses ~1,25" in text and "planned 2,032" in text
+    assert "risking ~2,032" not in text

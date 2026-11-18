@@ -643,7 +643,7 @@ class StrategyRunner:
             float(info.trade_contract_size) if info else 100000.0, risk_money,
             currency=(mt5.account_info().currency if mt5.account_info() else "CAD"),
             open_risk_fn=guard.open_risk if guard else None,
-            risk_cap=guard._cap if guard else None)
+            risk_cap=guard._cap if guard else None, mt5=mt5)
         self.broker = broker
         for s in [self.symbol] + ([self.smt_symbol] if self.smt_symbol else []):
             mt5.symbol_select(s, True)
