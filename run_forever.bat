@@ -15,5 +15,5 @@ if %errorlevel%==2 (
     exit /b 2
 )
 echo [%date% %time%] bot exited with code %errorlevel% - restarting in 60s (close this window to stop)
-"%SystemRoot%\System32	imeout.exe" /t 60 /nobreak >nul
+"%SystemRoot%\System32\timeout.exe" /t 60 /nobreak >nul
 goto loop
