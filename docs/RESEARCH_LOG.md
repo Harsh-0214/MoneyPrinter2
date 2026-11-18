@@ -641,3 +641,34 @@ negative; a lone pass is re-checked on data it never saw.
 | **Intraday momentum** NAS100 (first half hour predicts the last; Gao et al. 2018) | `run_intraday_momentum.py` | No gross edge (-0.85 to +1.2 points a trade on ~20,000); PF 0.67-0.91 after costs, 2026 negative |
 
 Research-only change: `fxbot/strategies/smc.py` gains `hold_overnight` (default off).
+
+## Nov 18 2026 - Round 3: relative value, index IBS, seasonality, NAS100 gap fade -> one real lead (IBS)
+
+`run_round3.py` (broker daily data: FX crosses from 1993, indices from 2000, metals from 2006; 2x
+spread + 6%/yr financing on index / gold CFDs). Pass: PF >= 1.15 2021-25, >= 4/5 years, 2026 >= 0,
+AND profitable before 2021. 9 of 68 pass:
+
+- **IBS on US indices** (buy at the close when IBS = (close - low) / (high - low) < 0.2; sell at the
+  next close or the first close above the previous day's high, max 5 days): 7 passes on SPX500 /
+  NAS100 / US30; profitable before 2021 (PF 1.15-1.42 over 2001-20) and in 2026. European / Asian
+  indices fail (GER40, UK100, FRA40, JPN225, AUS200), as in the published research (mostly a US
+  effect). **The lead of this whole search.**
+- EURGBP z-score (N20, H20): 1 of 4 versions, weak before 2021 (PF 1.08) - noise.
+- UK100 seasonal months: lone pass of 18 seasonality runs - noise. Seasonality overall: PF 0.91 2021-25.
+- AUDNZD / EURCHF / gold-silver mean reversion: fail (gold/silver loses heavily). NAS100 gap fade:
+  PF 1.08-1.13, near miss.
+
+**IBS with a realistic decision time** (`run_ibs_realistic.py`): the broker's daily candle closes at
+17:00 NY (rollover, CFD halted), so the day is rebuilt from hourly bars as 18:00 -> 16:00 NY and
+decided on the 16:00 price. Broker H1 is complete only from mid-2018. "Exit above the previous
+high" passes on all three: SPX500 PF 1.88 (2018-20) / 1.75, 5/5 years (2021-25) / 1.68 (2026);
+NAS100 1.71 / 1.48, 4/5 / 1.32; US30 1.19 / 1.29, 4/5 / 3.12. Dukascopy NAS100 (independent feed):
+PF 1.50 2021-25, 3/5 years. "Next day" exits are weaker at 16:00 (PF ~1.1, 3/5 years).
+
+Size and risk (daily version, 1x notional, no stop): SPX500 ~6%/yr, max DD -21 to -23%, worst
+trade -11% (2008); NAS100 ~10-17%/yr, DD -17 to -31%. Monthly correlation with the live bots
++0.22 (SPX500) / +0.11 (NAS100). Live bots + IBS at 1x (monthly sum, ignores margin crowding):
+avg month 4.19 -> 4.92 / 5.02 (2021-23), 7.89 -> 8.89 / 8.98 (2024-25), 7.00 -> 7.41 / 7.32 (2026);
+max DD -13.7 -> -17.1 / -13.1, -15.4 -> -12.9 / -14.0, -8.3 -> -7.9 / -10.0 (SPX / NAS).
+Not live: next step is a proper unit (16:00 NY decision on the broker feed, catastrophic stop,
+margin in run_portfolio.py) and a dry-run on the demo.
