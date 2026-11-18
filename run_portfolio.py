@@ -27,7 +27,8 @@ import yaml
 CACHE = "results/portfolio_trades_{}.csv"
 # Margin as a share of notional, measured on the FOREX.com demo with mt5.order_calc_margin
 # (Nov 2026): FX majors 5% (20:1), gold 22% (~4.5:1), US indices 10%.
-MARGIN_RATE = {"EURUSD": 0.05, "GBPUSD": 0.05, "USDJPY": 0.05, "AUDUSD": 0.05, "XAUUSD": 0.22}
+MARGIN_RATE = {"EURUSD": 0.05, "GBPUSD": 0.05, "USDJPY": 0.05, "AUDUSD": 0.05, "XAUUSD": 0.22,
+               "SPX500": 0.10}
 
 
 def _units_trades(cfg, source):
@@ -77,7 +78,7 @@ def _mt5_bars(cfg):
     from fxbot.data import server_ts_to_utc
     mt5.initialize()
     tfm = {"5min": mt5.TIMEFRAME_M5, "15min": mt5.TIMEFRAME_M15, "1h": mt5.TIMEFRAME_H1}
-    sym = {"EURUSD": "EURUSD.", "GBPUSD": "GBPUSD.", "XAUUSD": "XAUUSD", "USDJPY": "USDJPY."}
+    sym = {"EURUSD": "EURUSD.", "GBPUSD": "GBPUSD.", "XAUUSD": "XAUUSD", "USDJPY": "USDJPY.", "SPX500": "SPX500"}
     cache, out = {}, {}
 
     def get(s, tf):

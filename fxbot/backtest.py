@@ -9,6 +9,7 @@ import pandas as pd
 from .brokers import SimBroker, compute_spread_pips
 from .data import PIP, filter_dates, load_csv, resample
 from .risk import RiskManager, protect_before_news
+from .strategies.ibs import IBSReversion
 from .strategies import (LondonBreakout, LondonCloseReversal, LondonSweep,
                           MeanReversion, NYOpenBreakout, PrevDayBreakout,
                           TinyRangeFade, TrendFollow, KeyLevels, OpeningRange,
@@ -42,6 +43,7 @@ STRATEGY_MAP = {
     "fvg123":           FVG123,
     "crt":              CRT,
     "smc":              SMC,
+    "ibs":              IBSReversion,
 }
 
 

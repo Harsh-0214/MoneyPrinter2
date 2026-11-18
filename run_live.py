@@ -561,7 +561,8 @@ def _unit(cfg, pair, sleeve=None):
 
 
 STRATEGY_LABELS = {"london_sweep": "London", "london_breakout": "London",
-                   "daily_pullback": "Pullback", "trend_follow": "Trend", "vol_breakout": "Breakout"}
+                   "daily_pullback": "Pullback", "trend_follow": "Trend", "vol_breakout": "Breakout",
+                   "ibs": "IBS"}
 
 
 def _label(unit_cfg):

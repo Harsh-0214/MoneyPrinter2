@@ -44,6 +44,7 @@ TAG_PREFIXES = {
     "fvg123":          ("fvg_",),
     "crt":             ("crt_",),
     "smc":             ("smc_",),
+    "ibs":             ("ibs_",),
 }
 _ALL = tuple(p for ps in TAG_PREFIXES.values() for p in ps)
 

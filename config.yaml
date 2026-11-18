@@ -367,6 +367,41 @@ pairs:
           skip_days: [0]
       afternoon: []
 
+  # Nov 18 2026: S&P 500 IBS mean reversion (fxbot/strategies/ibs.py; research run_round3.py,
+  # run_ibs_realistic.py, docs/RESEARCH_LOG.md). NOT in start_bots.bat: dry-run only until decided.
+  # Magic 12349 (base + pair index 4).
+  - symbol: SPX500
+    broker_symbol: SPX500        # FOREX.com: no trailing dot; 1 lot = $1 a point, min 0.1 lot, 10% margin
+    spread_pips: 10.0            # 1.0 index point (pip = 0.1); broker median 0.6: pessimistic
+    risk:
+      risk_per_trade_pct: 2.0    # of equity lost if the catastrophic stop is hit. run_ibs_portfolio.py (whole
+                                 #   account, real 10% margin): avg month 5.05/7.03/11.79 -> 5.95/7.10/11.88
+                                 #   (2021-23/2024-25/2026), max DD -17.7/-20.6/-12.7 -> -19.5/-20.6/-14.2;
+                                 #   reshuffled 1-in-100 DD -23.4 -> -23.0. 3% lowers 2026: 2% kept.
+      news_currencies: [USD]
+    instrument:
+      pip: 0.1
+      min_units: 1               # units = contracts ($1 a point each)
+    data:
+      path: data/mt5/SPX500_H1.csv   # broker H1 (python fetch_mt5_h1.py); complete from mid-2018
+      source_tz: "UTC"
+      timeframe: 1h
+    costs:                       # index CFD financing ~ benchmark + 2.5%: 6%/yr either way (demo shows 0)
+      swap_long_per_lot: 0.0
+      swap_short_per_lot: 0.0
+      swap_long_pct: -6.0
+      swap_short_pct: -6.0
+    warmup_days: 60              # live: replay ~60 days to rebuild the 20-day average range
+    strategies:
+      morning:
+        - name: ibs
+          entry_ibs: 0.2         # buy at the 16:00 NY price when IBS < 0.2
+          max_days: 5            # sell at 16:00 above the previous day's high, or after 5 days
+          stop_range: 3.0        # catastrophic stop: 3x the 20-day average day range below entry
+                                 #   (1.5/2/2.5/3/4x tested: 3x best, 2021-25 PF 1.64, 5/5 years, 2026 1.74;
+                                 #   hit ~2-3 times a year; no stop at all is better still but unbounded)
+      afternoon: []
+
   # AUDUSD tested Nov 2026 with unchanged params: 2021-23 +0.0%, 2024-25 +5.1%,
   # breakeven at 1.5-pip spread. Adds ~1%/yr but raises max DD -10.6% -> -13.4%.
   # Left disabled. Uncomment to include (no SMT partner -> SMT filter passes).

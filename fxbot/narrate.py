@@ -28,12 +28,14 @@ TAG_WHY = {
     "dpb_short": "a sharp rally inside a downtrend (sell the rally)",
     "trend_long": "a daily close above the breakout level (new trend)",
     "trend_short": "a daily close below the breakout level",
+    "ibs_long": "the index closed near the bottom of its day (IBS), which tends to bounce",
 }
 REASON_WHY = {
     "session_exit": "the session ended (16:00 London close-out)",
     "trend_exit": "the trend exit was hit",
     "pullback_exit": "price snapped back, so the pullback is done",
     "time_exit": "it reached its maximum holding time",
+    "ibs_exit": "the index bounced above the previous day's high, or 5 days passed",
 }
 
 

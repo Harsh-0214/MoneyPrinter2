@@ -31,6 +31,8 @@ def strategy_of(tag):
         return "Gold trend"
     if tag.startswith("dpb_"):
         return "Daily pullback"
+    if tag.startswith("ibs_"):
+        return "Index IBS"
     return tag or "unknown"
 
 

@@ -217,6 +217,7 @@ Everything below is for working on the code.
 | | Add-on to the 55-day trend once it is +0.5R | 1 h | ~4 | 4% | 12547 | same |
 | | Add-on to the 20-day trend once it is +0.5R | 1 h | ~4 | 4% | 12647 | same |
 | **USDJPY** | Volatility breakout (day open ± 0.9 × yesterday's range), both directions, second try after a stop-out | 15 min | ~30 | 4% | 12348 | 05:00–12:00 London, exits 21:00 |
+| **SPX500** (dry run) | IBS mean reversion: buy at 16:00 New York when the S&P 500 closes in the bottom 20% of its day; sell at 16:00 above the previous day's high or after 5 days; stop 3x the average day range | 1 h | ~30 | 2% | 12349 | decides 16:00 NY; `run_spx_dryrun.bat`, not in start_bots.bat |
 
 In `config.yaml`, a market's main stack is its `pairs:` entry and each extra strategy is a
 `sleeves:` item under it. A pair can override the global risk with its own `risk:` block.
