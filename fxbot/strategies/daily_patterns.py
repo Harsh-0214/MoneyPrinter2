@@ -206,6 +206,16 @@ class VolBreakout:
         # price is add_on_r x the main trade's risk beyond the level, buys a second position
         # whose stop is the breakout level. Disarms if the main stop would have been hit.
         self.add_on_r = float(cfg.get("add_on_r", 0.0))
+        # Shadow rule "H" (Nov 17 2026, watch-only): would skip a counter-trend breakout whose
+        # candle closed weak (wick back toward the range) or far past the level. Never changes
+        # what is traded; the live bot logs each verdict so it can be judged on fresh trades.
+        sh = cfg.get("shadow_rule_h") or {}
+        self.shadow_on = bool(sh)
+        self.shadow_weak = float(sh.get("weak_close", 0.77)) if sh else 0.0
+        self.shadow_far = float(sh.get("far_past", 0.114)) if sh else 0.0
+        self.shadow_trend_n = int(sh.get("trend_sma", 50)) if sh else 0
+        self._shadow_pending = None
+        self.shadow_event = None    # set when a trade fires; the live runner logs and clears it
         self.d = _Daily()
         self.levels = None
         self.n_traded = 0
@@ -216,6 +226,7 @@ class VolBreakout:
         return self.n_traded >= self.max_trades
 
     def propose(self, bar, local_day, local_min, broker, risk) -> Optional[TradeProposal]:
+        self._shadow_pending = None
         if self.d.update(bar, local_day):
             self.n_traded = 0
             self.main_side = 0
@@ -265,7 +276,26 @@ class VolBreakout:
         target = bar.close + side * self.target_rr * self.stop_k * rng if self.target_rr else None
         o = _order(side, bar.close, stop, target, bar, self.pip, broker, risk,
                    "vbo_long" if side == 1 else "vbo_short")
+        self._shadow_pending = self._shadow_verdict(bar, side, up if side == 1 else dn, rng, yclose)             if (o and self.shadow_on) else None
         return TradeProposal(o, self.score, self.NAME) if o else None
+
+    def _shadow_verdict(self, bar, side, level, rng, yclose):
+        hi, lo, c = bar.high, bar.low, bar.close
+        close_loc = ((c - lo) if side == 1 else (hi - c)) / (hi - lo) if hi > lo else 0.5
+        past = (c - level) * side / rng
+        sma = self.d.sma(self.shadow_trend_n)
+        counter = sma is not None and (yclose - sma) * side < 0
+        weak, far = close_loc <= self.shadow_weak, past > self.shadow_far
+        skip = counter and (weak or far)
+        why = []
+        if counter:
+            why.append(f"against the {self.shadow_trend_n}-day trend")
+        why.append(f"candle closed {close_loc:.0%} toward its {'high' if side == 1 else 'low'}"
+                   + (" (weak)" if weak else ""))
+        why.append(f"{past:.2f}x yesterday's range past the level" + (" (far)" if far else ""))
+        return dict(bar_time=str(bar.Index), side=side, close_loc=round(close_loc, 3), past=round(past, 3),
+                    trend_sma=round(sma, 5) if sma is not None else None, counter_trend=counter,
+                    verdict="SKIP" if skip else "TAKE", why="; ".join(why))
 
     def _add_on(self, bar, side, up, dn, rng, trend, yclose, broker, risk):
         """Add-on unit: arm on the main breakout, fire add_on_r R beyond the level."""
@@ -297,6 +327,8 @@ class VolBreakout:
 
     def mark_fired(self):
         self.n_traded += 1
+        if self._shadow_pending is not None:
+            self.shadow_event, self._shadow_pending = self._shadow_pending, None
 
     def describe(self, local_min=None):
         """Chart overlay: today's buy/sell trigger levels, the day's open, the trend line,
@@ -350,7 +382,9 @@ class VolBreakout:
                 what = f"waits for the main breakout, then adds at +{self.add_on_r:g}R"
             out["status"] = f"Breakout add-on: {what}; {msg}; closes {hm(self.exit_min)}"
             return out
-        out["status"] = (f"Vol breakout: trend {'UP' if longs_ok and not shorts_ok else 'DOWN' if shorts_ok and not longs_ok else 'FLAT'}"
+        trend_word = ("filter off" if trend is None else
+                      "UP" if longs_ok and not shorts_ok else "DOWN" if shorts_ok and not longs_ok else "FLAT")
+        out["status"] = (f"Vol breakout: trend {trend_word}"
                          f" -> {side}; {msg}; stop {stop / self.pip:.0f}p, stop to breakeven at +{self.be:g}R, "
                          f"closes {hm(self.exit_min)}"
                          + (f"; up to {self.max_trades} tries a day" if self.max_trades > 1 else ""))

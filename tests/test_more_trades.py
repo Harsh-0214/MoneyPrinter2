@@ -221,3 +221,58 @@ def test_live_runner_says_each_skip_once_per_day():
         assert said == ["London did not trade: the trend is DOWN."] * 2
     finally:
         nl.removeHandler(h)
+
+
+# ---- Nov 17 2026: watch-only rule H on the USDJPY breakout -------------------------------------
+_H = {"weak_close": 0.77, "far_past": 0.114, "trend_sma": 2}
+
+
+def _h_rows(close_bar):
+    """Trend down over 2 days (closes 102 then 100.5); day 3 breaks UP (counter-trend)."""
+    t0 = pd.Timestamp("2024-01-08 00:00", tz="UTC")
+    rows = [(t0 + pd.Timedelta(hours=k), 102.0, 102.5, 101.5, 102.0) for k in range(24)]
+    d1 = t0 + pd.Timedelta(days=1)
+    rows += [(d1 + pd.Timedelta(hours=k), 100.5, 101.0, 100.0, 100.5) for k in range(24)]
+    d2 = t0 + pd.Timedelta(days=2)
+    return rows + [(d2, 100.6, 100.7, 100.5, 100.6), (d2 + pd.Timedelta(hours=1), *close_bar)]
+
+
+def _h_strat():
+    return VolBreakout(dict(k=0.5, stop_range=0.5, trend_sma=None, shadow_rule_h=_H,
+                            entry_start="00:00", entry_end="23:00", exit_time="23:30"), 0.01)
+
+
+def test_shadow_h_flags_a_counter_trend_breakout_that_closed_far_past_the_level():
+    s = _h_strat()                                     # buy level 101.1; close 101.3 = 0.2x range past
+    out = _feed(s, _h_rows((100.6, 101.3, 100.6, 101.3)), _Broker(), _Risk())
+    assert len(out) == 1                               # still traded: shadow never blocks
+    ev = s.shadow_event
+    assert ev["verdict"] == "SKIP" and ev["counter_trend"] and ev["past"] > 0.114
+    assert "against the 2-day trend" in ev["why"] and "(far)" in ev["why"]
+
+
+def test_shadow_h_takes_a_strong_close_just_past_the_level():
+    s = _h_strat()                                     # close 101.15 at the bar high: strong, 0.05x past
+    _feed(s, _h_rows((100.6, 101.15, 100.6, 101.15)), _Broker(), _Risk())
+    assert s.shadow_event["verdict"] == "TAKE"
+
+
+def test_shadow_h_flags_a_weak_close():
+    s = _h_strat()                                     # high 101.9, close 101.15: wick back, close_loc ~0.4
+    _feed(s, _h_rows((100.6, 101.9, 100.6, 101.15)), _Broker(), _Risk())
+    assert s.shadow_event["verdict"] == "SKIP" and "(weak)" in s.shadow_event["why"]
+
+
+def test_shadow_h_never_changes_backtest_trades():
+    cfg = yaml.safe_load(open("config.yaml"))
+    cfg["smt"] = {}
+    unit = {"name": "vol_breakout", "k": 0.3, "stop_range": 0.3, "trend_sma": None, "max_trades_per_day": 2,
+            "entry_start": "01:00", "entry_end": "20:00", "exit_time": "21:00"}
+    bars = resample(generate_synthetic(days=150, seed=11), "15min")
+    res = []
+    for shadow in (None, {"weak_close": 0.77, "far_past": 0.114, "trend_sma": 50}):
+        cfg["strategies"] = {"morning": [dict(unit, shadow_rule_h=shadow)], "afternoon": []}
+        t, _ = run_backtest(bars, cfg)
+        res.append(t[["entry_time", "side", "r_multiple"]].reset_index(drop=True))
+    assert len(res[0]) > 5
+    pd.testing.assert_frame_equal(res[0], res[1])

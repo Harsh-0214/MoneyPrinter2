@@ -29,6 +29,7 @@ EVENT_PATTERNS = [
     (re.compile(r"not traded"), "SKIP"),
     (re.compile(r"DAILY SUMMARY"), "DAILY"),
     (re.compile(r"Bot started|bot: \d+ strateg|Bot stopped"), "BOT"),
+    (re.compile(r"\bSHADOW\b"), "SHADOW"),
     (re.compile(r"\bSTATUS\b"), "STATUS"),
 ]
 MAX_EVENTS_FILE = 512 * 1024        # MT5 events file is trimmed past this size

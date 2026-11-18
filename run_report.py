@@ -95,6 +95,34 @@ def live_trades(mt5, cfg, since):
     return pd.DataFrame(rows).sort_values("entry_time") if rows else pd.DataFrame()
 
 
+def shadow_report(closed, path="data/state/shadow_rule_h.csv"):
+    """Watch-only rule H on the USDJPY breakout: what its SKIP / TAKE calls would have done."""
+    if not os.path.exists(path):
+        return
+    sh = pd.read_csv(path)
+    if sh.empty:
+        return
+    sh = sh.assign(bar_time=pd.to_datetime(sh["bar_time"], utc=True)).sort_values("bar_time")
+    t = closed[closed.tag.astype(str).str.startswith("vbo_") & closed.symbol.astype(str).str.startswith("USDJPY")]
+    t = t.assign(entry_time=pd.to_datetime(t.entry_time, utc=True)).sort_values("entry_time")
+    m = pd.merge_asof(sh, t[["entry_time", "R", "pnl"]], left_on="bar_time", right_on="entry_time",
+                      direction="forward", tolerance=pd.Timedelta("45min"))
+    done = m[m.R.notna()]
+    print(f"\n=== SHADOW rule H (USDJPY breakout, watch only): {len(m)} verdicts, {len(done)} closed ===")
+    for v in ("SKIP", "TAKE"):
+        g = done[done.verdict == v]
+        if len(g):
+            print(f"  would {v}: {len(g)} trades, {(g.R <= -0.9).sum()} full stop-outs, total {g.R.sum():+.2f}R, "
+                  f"P/L {g.pnl.sum():+,.2f}")
+    skipped = done[done.verdict == "SKIP"]
+    if len(skipped):
+        helped = skipped.R.sum() < 0
+        print(f"  -> the trades H would have skipped {'LOST' if helped else 'MADE'} {skipped.R.sum():+.2f}R: "
+              f"{'H would have helped' if helped else 'H would have cost money'} so far.")
+    if len(done) < 15:
+        print(f"  Only {len(done)} closed - wait for ~15-20 before deciding (Nov 17 2026 plan).")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default="config.yaml")
@@ -140,6 +168,7 @@ def main():
         print(line)
     print("Reference: 2026 out-of-sample (Jan 1 - Nov 11, data never used for tuning; re-run with "
           "python run_oos_mt5.py): portfolio +17.0%, PF 2.60, max DD -4.7%, ~1.3 trades/week.")
+    shadow_report(closed)
     n_closed = len(closed)
     print(f"\nTotal P/L {closed.pnl.sum():+,.2f} {acct.currency} over {n_closed} closed trades. "
           f"Average entry slippage {t.slippage_pips.mean():+.2f} pips.")

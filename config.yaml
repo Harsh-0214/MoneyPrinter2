@@ -356,6 +356,12 @@ pairs:
                                      #   3.92 -> 4.48 / 6.34 -> 5.94 / 7.04 -> 12.6, max DD 1-2.4 points
                                      #   deeper (-18.4 / -21.1 / -10.9). Not applied: one period down
                                      #   and deeper drawdowns; 2026 carries it. Revisit with more data.
+          shadow_rule_h:             # Nov 17 2026, WATCH ONLY (never changes trades): logs whether rule H
+            weak_close: 0.77         #   would skip each breakout - a counter-trend (50-day) one whose candle
+            far_past: 0.114          #   closed weak (<=77% toward its extreme) or far past the level (>0.114x
+            trend_sma: 50            #   yesterday's range). Whole-account sim: ~same returns, 2026 DD -12.7 ->
+                                     #   -7.0%, but picked from 8 variants on the same trades, so judged on
+                                     #   fresh live trades: python run_report.py (SHADOW section). Remove to stop.
           trail_to_breakeven_rr: 1.0  # stop -> entry at +1R. Fixed targets cut profit by half
                                       #   (best breakouts run past 2-3R before 21:00).
           skip_days: [0]

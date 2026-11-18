@@ -26,6 +26,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 LONDON = zoneinfo.ZoneInfo("Europe/London")
+SHADOW_FILE = "data/state/shadow_rule_h.csv"   # watch-only rule verdicts (see _collect_shadow)
 
 
 def _setup_logging(tag, verbose=False):
@@ -812,6 +813,7 @@ class StrategyRunner:
                                            self.fired_day, self.slot_limit)
             self.last_ts = bar.Index
             self._collect_skips(day)
+            self._collect_shadow()
         if len(new):
             self.last_bar = (new.index[-1], new.iloc[-1])     # newest closed candle (terminal MT5 line)
         if had_pos and broker.position() is None:
@@ -823,6 +825,26 @@ class StrategyRunner:
         # what changed in plain English (for the terminal); new_bars for the quiet line
         self.changed = [v for k, v in self.last_status.items() if v and before.get(k) != v]
         self.new_bars = len(new)
+
+    def _collect_shadow(self, path=SHADOW_FILE):
+        """Watch-only rules (e.g. the USDJPY breakout's rule H) set `shadow_event` when a trade
+        fires: what the rule WOULD have done. Logged and appended to a CSV that run_report.py
+        joins with the real outcome. Never affects trading."""
+        for strat in self.morning:
+            ev = getattr(strat, "shadow_event", None)
+            if not ev:
+                continue
+            strat.shadow_event = None
+            try:
+                import pandas as pd
+                self.log.info("SHADOW rule H would %s this trade: %s", ev["verdict"], ev["why"])
+                row = dict(logged_utc=datetime.now(timezone.utc).isoformat(), unit=self.label,
+                           symbol=self.symbol, **ev)
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                new_file = not os.path.exists(path)
+                pd.DataFrame([row]).to_csv(path, mode="a", header=new_file, index=False)
+            except Exception as e:                      # shadow logging must never stop trading
+                self.log.warning("shadow rule log failed: %s", e)
 
     def _collect_skips(self, day):
         """Each rule that blocked a trade sets `skip_note = (kind, text)` on the strategy or the

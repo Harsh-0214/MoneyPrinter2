@@ -201,3 +201,21 @@ def test_risk_brake_tiers():
     assert run_live.brake_risk(3.0, 25.0, tiers) == 0.5
     assert run_live.brake_risk(3.0, 25.0, []) == 3.0
     assert run_live.brake_risk(1.0, 9.0, tiers) == 1.0        # never raises risk
+
+
+def test_collect_shadow_logs_and_appends_csv(tmp_path, caplog):
+    import logging
+    import pandas as pd
+    strat = SimpleNamespace(shadow_event=dict(bar_time="2026-11-17 09:00:00+00:00", side=-1, close_loc=0.82,
+                                              past=0.19, trend_sma=157.6, counter_trend=True, verdict="SKIP",
+                                              why="against the 50-day trend"))
+    r = SimpleNamespace(morning=[strat, SimpleNamespace()], label="Breakout", symbol="USDJPY.",
+                        log=logging.getLogger("test.shadow"))
+    path = tmp_path / "state" / "shadow.csv"
+    with caplog.at_level(logging.INFO, logger="test.shadow"):
+        run_live.StrategyRunner._collect_shadow(r, str(path))
+        run_live.StrategyRunner._collect_shadow(r, str(path))      # event cleared: nothing new
+    assert strat.shadow_event is None
+    d = pd.read_csv(path)
+    assert len(d) == 1 and d.verdict[0] == "SKIP" and d.unit[0] == "Breakout"
+    assert "SHADOW rule H would SKIP" in caplog.text
