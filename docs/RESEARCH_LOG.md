@@ -693,3 +693,23 @@ margin in run_portfolio.py) and a dry-run on the demo.
   risk cap it blocks ~10 other trades in 2021-23. A modest diversifier, not a big boost.
 - Dry run on the demo from Nov 18 (`run_spx_dryrun.bat`): live 16:00 NY values match the research
   calculation (Nov 17 IBS 0.37). Decide after ~15 signals whether to trade it on the demo.
+
+## Nov 18 2026 - Trading costs: a raw-spread account is worth ~+0.2% a month; slippage costs ~-0.4%
+
+`run_cost_test.py`: every unit re-run with each market's effective spread, whole-account replay at
+live settings (SPX500 left out). Effective spread (pips) EUR / GBP / JPY / gold ($0.10) / SPX (0.1 pt):
+A today 1.4 / 2.0 / 1.6 / 8 / 10; B typical raw-spread account (0.2 + $7/lot commission) 0.9 / 0.9 /
+0.9 / 2.5 / 5; C half of today; D today + 0.5 pip slippage.
+
+| scenario | avg R/trade 21-25 | reshuffled 2021-25: typical / unlucky month | 1-in-100 DD |
+|---|---|---|---|
+| A today | +0.290 | 5.35 / 4.36 | -23.1 |
+| B raw-spread account | +0.305 | 5.55 / 4.55 | -23.3 |
+| C half of today | +0.306 | 5.58 / 4.61 | -23.5 |
+| D +0.5 pip slippage | +0.274 | 4.92 / 3.94 | -23.7 |
+
+Every unit gains a little per trade with lower costs (USDJPY +0.31 -> +0.34R, EURUSD +0.14 -> +0.16R).
+In the actual 2021-26 order the account path is sensitive (B: 5.88 / 6.70 / 12.61% vs A 5.05 / 7.03 /
+11.80%: one period lower from which trades fit the margin / risk caps), so the reshuffles are the fair
+comparison: +0.2% a month for a raw account, -0.4% a month if fills are 0.5 pip worse than the demo.
+Smaller than lower gold margin (10% instead of 22%: +0.4 / +1.0 / +1.2% a month, same drawdowns).
