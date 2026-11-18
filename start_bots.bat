@@ -8,12 +8,13 @@ rem   USDJPY          : volatility breakout (15 min)
 rem Can run automatically at Windows login (Task Scheduler task "MoneyPrinter2 bots").
 cd /d "%~dp0"
 
-tasklist /fi "imagename eq terminal64.exe" | find /i "terminal64.exe" >nul
+rem Windows' own find/timeout by full path: from Git Bash its Unix find/timeout come first on PATH.
+tasklist /fi "imagename eq terminal64.exe" | "%SystemRoot%\System32\find.exe" /i "terminal64.exe" >nul
 if errorlevel 1 (
     echo Starting MetaTrader 5...
     start "" "C:\Program Files\MetaTrader 5\terminal64.exe"
     rem give MT5 time to log in
-    timeout /t 45 /nobreak >nul
+    "%SystemRoot%\System32\timeout.exe" /t 45 /nobreak >nul
 )
 
 rem Phone control (Telegram /status /startbots /stopbots /restart); exits at once if already
@@ -22,5 +23,5 @@ start "fxbot phone control" /min "%~dp0venv\Scripts\python.exe" "%~dp0telegram_c
 
 for %%B in (EURUSD GBPUSD XAUUSD USDJPY) do (
     start "fxbot %%B" cmd /k ""%~dp0run_forever.bat" %%B"
-    timeout /t 3 /nobreak >nul
+    "%SystemRoot%\System32\timeout.exe" /t 3 /nobreak >nul
 )
