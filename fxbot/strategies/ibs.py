@@ -84,7 +84,8 @@ class IBSReversion:
                 broker.close_position("ibs_exit")
                 self.last = f"sold at {c16:g} ({'above the previous high' if prev_high and c16 > prev_high else f'{self.held} days held'})"
                 return None
-            self.last = f"holding ({self.held} of {self.max_days} days), sell above {prev_high:g}"
+            above = f", sell above {prev_high:g}" if prev_high is not None else ""
+            self.last = f"holding ({self.held} of {self.max_days} days){above}"
             return None
         avg = self._avg_range()
         if avg is None:

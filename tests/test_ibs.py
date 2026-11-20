@@ -129,3 +129,13 @@ def test_mt5_units_from_volume():
     from fxbot.brokers.mt5_broker import _units
     assert _units(0.13 * 100000) == 13000 and isinstance(_units(0.13 * 100000), int)
     assert _units(2.9 * 1.0) == 2.9
+
+
+def test_restart_with_an_open_trade_and_no_history_does_not_crash():
+    # Nov 20 2026: the bot restarted while holding an SPX500 trade; the first replayed 16:00
+    # decision had no previous day and the status line crashed formatting prev_high=None
+    s = IBSReversion({}, 0.1)
+    b = _Broker()
+    b.pos = SimpleNamespace(tag="ibs_long", entry_price=100)
+    assert _feed(s, _day("2024-01-02", 101.0, 99.0, 100.6), b) == []
+    assert s.last.startswith("holding (1 of 5 days)") and not b.closed
