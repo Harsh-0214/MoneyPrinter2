@@ -93,9 +93,11 @@ def mt5_bars(mk, kind, pip, floor_pips):
         return None
     df = pd.read_csv(fn, index_col=0)
     df.index = pd.to_datetime(df.index, utc=True)
-    point = float(df["point"].iloc[0])
+    # M5_2026 files (fetch for the 4pm-fix test) have 'spread' in points and no 'point' column
+    point = float(df["point"].iloc[0]) if "point" in df else pip / 10
+    spread = df["spread_pts"] if "spread_pts" in df else df["spread"]
     out = df[["open", "high", "low", "close"]].copy()
-    out["data_spread_pips"] = (df["spread_pts"] * point / pip).clip(lower=floor_pips)
+    out["data_spread_pips"] = (spread * point / pip).clip(lower=floor_pips)
     return out
 
 
@@ -141,7 +143,7 @@ def run_variant(name):
     mb = mt5_bars(mk, kind, pip, float(c["costs"]["spread_pips"]))
     if mb is not None:
         c2 = copy.deepcopy(c)
-        c2["data"]["timeframe"] = "1h" if kind == "H1" else "15min"
+        c2["data"]["timeframe"] = {"H1": "1h", "M5_2026": "5min"}.get(kind, "15min")
         t2, _ = run_backtest(mb, c2)
         if len(t2):
             t2 = t2.copy()

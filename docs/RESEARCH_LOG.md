@@ -744,3 +744,17 @@ down (gold margin crowding); China A50 trend 5.96 / 6.86 / 11.54; UK oil trend 5
   pass (NAS100, Monday down > 0.5%) is 1 of 6 and is the same weak-close idea IBS already trades.
 - Not testable on this account: VIX ETFs and every ETF CFD are trade mode "disabled"; no crypto,
   no bond CFDs.
+
+## Nov 20 2026 - USDJPY breakout: enter earlier? Rejected (run_jpy_entry.py, run_jpy_entry_portfolio.py)
+
+Prompted by Nov 19 (bought 159.898, ~52 pips above the open; it went 6 pips further and stopped out).
+On the live rules, a closer level (k) or 5-min candles:
+* Alone, every k 0.5-1.0 passes; k 0.6 has the most total R (2021-25 +57.5R vs +47.1R live, 2026
+  +25.8R vs +22.8R) but from 2.2x the trades at about half the edge each (avgR 0.17 vs 0.31).
+* Whole account (4% risk, caps, SPX500 2%), avg month 2021-23 / 2024-25 / 2026:
+  k 0.9 (live) 5.94 / 7.15 / 11.79, DD -19.3 / -20.6 / -14.2, MC typical 5.44%
+  k 0.8 4.11 / 5.99 / 10.10;  k 0.7 2.95 / 6.16 / 9.46;  k 0.6 5.83 / 6.07 / 11.79;
+  k 0.5 4.48 / 8.71 / 9.25 (DD -21.7 / -22.2 / -16.5), MC typical 4.24-4.99% for all.
+* 5-min candles: lower PF than 15-min at every k (e.g. k 0.9: 1.55 vs 1.68).
+Verdict: k 0.9 on 15-min stays. Earlier entries catch more noise; the weaker trades take risk and
+margin room from the better ones. Nov 19 was an ordinary loss of the rules, not a late entry.
