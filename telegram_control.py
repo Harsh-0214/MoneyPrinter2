@@ -8,6 +8,8 @@ Commands (only your own chat, TELEGRAM_CHAT_ID in .env, is answered; everyone el
     /stopbots     stop all market bots (asks you to confirm with /stopbots yes); open trades keep
                   their stop losses at the broker
     /restart      stop and start all market bots
+    /restartmt5   close and reopen MetaTrader so it logs in to the broker again (use when the bots
+                  say "Authorization failed"); the bots reconnect by themselves within ~2 minutes
     /help         this list
 
 This program keeps running when the bots are stopped, so /startbots works afterwards. It cannot
@@ -26,7 +28,7 @@ import yaml
 from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parent
-MARKETS = ["EURUSD", "GBPUSD", "XAUUSD", "USDJPY"]
+MARKETS = ["EURUSD", "GBPUSD", "XAUUSD", "USDJPY", "SPX500"]
 MT5_EXE = r"C:\Program Files\MetaTrader 5\terminal64.exe"
 log = logging.getLogger("telegram_control")
 
@@ -131,6 +133,39 @@ def start_missing():
     return started
 
 
+def mt5_logged_in():
+    """(True, account line) if a fresh connection to the terminal gets an authorized account."""
+    try:
+        import MetaTrader5 as mt5
+        if not mt5.initialize():
+            return False, str(mt5.last_error())
+        a = mt5.account_info()
+        mt5.shutdown()
+        return (True, f"account {a.login} on {a.server}, equity {a.equity:,.2f}") if a else (False, "no account")
+    except Exception as e:
+        return False, str(e)[:80]
+
+
+def restart_mt5(wait_s=120):
+    """Close MetaTrader (politely, then by force), reopen it and wait for it to log in."""
+    subprocess.run(["taskkill", "/im", "terminal64.exe"], capture_output=True)
+    for _ in range(15):
+        if not mt5_running():
+            break
+        time.sleep(1)
+    else:
+        subprocess.run(["taskkill", "/f", "/im", "terminal64.exe"], capture_output=True)
+        time.sleep(3)
+    subprocess.Popen([os.getenv("MT5_TERMINAL_PATH") or MT5_EXE], cwd=str(ROOT))
+    why = "did not start"
+    for _ in range(wait_s // 10):
+        time.sleep(10)
+        ok, why = mt5_logged_in()
+        if ok:
+            return True, why
+    return False, why
+
+
 def stop_all():
     subprocess.run(["cmd", "/c", str(ROOT / "stop_bots.bat")], cwd=str(ROOT), capture_output=True)
     time.sleep(3)
@@ -162,6 +197,7 @@ class Telegram:
     def set_menu(self):
         cmds = [("status", "Are the bots on? Open trades, equity"), ("startbots", "Start any bot that is off"),
                 ("stopbots", "Stop all bots (asks to confirm)"), ("restart", "Restart all bots"),
+                ("restartmt5", "Reopen MetaTrader so it logs in again"),
                 ("help", "List the commands")]
         try:
             requests.post(self.base + "/setMyCommands", timeout=15,
@@ -179,12 +215,18 @@ def handle(text):
     if cmd == "/startbots":
         s = start_missing()
         return ("Started: " + ", ".join(s) + ". Send /status in a minute to check." if s
-                else "All 4 bots were already running.")
+                else "All bots were already running.")
     if cmd == "/stopbots":
         if args[:1] != ["yes"]:
-            return "This stops all 4 bots. Open trades stay open with their stop losses at the broker. Send /stopbots yes to confirm."
+            return "This stops all the bots. Open trades stay open with their stop losses at the broker. Send /stopbots yes to confirm."
         left = stop_all()
         return "All bots stopped." if not left else "Still running: " + ", ".join(left)
+    if cmd == "/restartmt5":
+        ok, why = restart_mt5()
+        return (f"MetaTrader restarted and logged in ({why}). The bots reconnect by themselves within ~2 "
+                "minutes; send /status to check." if ok else
+                f"MetaTrader restarted but is NOT logged in ({why}). It may not have the password saved, "
+                "or the broker's server is down (common at weekends). It has to be logged in on the PC.")
     if cmd == "/restart":
         stop_all()
         s = start_missing()

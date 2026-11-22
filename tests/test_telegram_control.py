@@ -26,3 +26,12 @@ def test_commands(monkeypatch):
     assert tc.handle("/stopbots yes") == "All bots stopped." and calls == ["stop"]
     assert tc.handle("/startbots").startswith("Started: GBPUSD")
     assert "/restart" in tc.handle("/help")
+
+
+def test_restart_mt5_command(monkeypatch):
+    monkeypatch.setattr(tc, "restart_mt5", lambda: (True, "account 1 on X"))
+    assert "logged in (account 1 on X)" in tc.handle("/restartmt5")
+    monkeypatch.setattr(tc, "restart_mt5", lambda: (False, "(-6, 'Terminal: Authorization failed')"))
+    assert "NOT logged in" in tc.handle("/restartmt5")
+    assert "/restartmt5" in tc.handle("/help")
+    assert "SPX500" in tc.MARKETS
